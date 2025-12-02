@@ -3,17 +3,17 @@ import React from 'react';
 import { useAuth } from '../context/AuthContext';
 import { Role } from '../types';
 import { Link, useLocation } from 'react-router-dom';
-import { 
-  LayoutDashboard, 
-  GraduationCap, 
-  CalendarDays, 
-  CreditCard, 
-  LogOut, 
-  BookOpen, 
-  Users, 
-  FileText, 
-  CheckSquare, 
-  History, 
+import {
+  LayoutDashboard,
+  GraduationCap,
+  CalendarDays,
+  CreditCard,
+  LogOut,
+  BookOpen,
+  Users,
+  FileText,
+  CheckSquare,
+  History,
   UserCog,
   School
 } from 'lucide-react';
@@ -75,9 +75,8 @@ export const Layout: React.FC<LayoutProps> = ({ children, role }) => {
       {/* Sidebar */}
       <aside className="w-64 bg-white border-r border-gray-200 flex flex-col flex-shrink-0 fixed h-full z-10 left-0 top-0">
         <div className="p-6 flex flex-col items-center border-b border-gray-100">
-          <div className="w-16 h-16 bg-primary rounded-full flex items-center justify-center text-white mb-3">
-             {/* Using Lucide icon as placeholder for logo */}
-             <School size={32} />
+          <div className="w-20 h-20 mb-3 flex items-center justify-center">
+            <img src="/logoueagru.jpg.png" alt="Logo" className="w-full h-full object-contain" />
           </div>
           <h2 className="font-bold text-center text-primary leading-tight">U.E.A. Gral. Rafael Urdaneta</h2>
         </div>
@@ -103,7 +102,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, role }) => {
               </div>
             </div>
           )}
-          <button 
+          <button
             onClick={logout}
             className="w-full flex items-center gap-3 px-4 py-2 text-sm font-medium text-red-600 hover:bg-red-50 rounded-lg transition-colors"
           >
@@ -126,11 +125,10 @@ export const Layout: React.FC<LayoutProps> = ({ children, role }) => {
 const NavItem = ({ to, icon, label, active }: { to: string, icon: React.ReactNode, label: string, active: boolean }) => (
   <Link
     to={to}
-    className={`flex items-center gap-3 px-4 py-3 text-sm font-medium rounded-lg transition-colors ${
-      active 
-        ? 'bg-primary text-white shadow-md' 
+    className={`flex items-center gap-3 px-4 py-3 text-sm font-medium rounded-lg transition-colors ${active
+        ? 'bg-primary text-white shadow-md'
         : 'text-gray-700 hover:bg-gray-100'
-    }`}
+      }`}
   >
     {icon}
     {label}

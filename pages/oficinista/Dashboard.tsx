@@ -1,9 +1,40 @@
-
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { UserPlus, UserCog, Book } from 'lucide-react';
-import { MOCK_REPRESENTATIVES, MOCK_TEACHERS, MOCK_SUBJECTS } from '../../constants';
+import client from '../../api/client';
 
 export const ClerkDashboard = () => {
+  const [stats, setStats] = useState({
+    representatives: 0,
+    teachers: 0,
+    subjects: 0
+  });
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchStats = async () => {
+      try {
+        const [repsRes, teachersRes, subjectsRes] = await Promise.all([
+          client.get('users/?role=REPRESENTANTE'),
+          client.get('teachers/'),
+          client.get('subjects/')
+        ]);
+
+        setStats({
+          representatives: repsRes.data.length,
+          teachers: teachersRes.data.length,
+          subjects: subjectsRes.data.length
+        });
+      } catch (error) {
+        console.error("Error fetching dashboard stats", error);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchStats();
+  }, []);
+
+  if (loading) return <div>Cargando...</div>;
+
   return (
     <div className="space-y-8">
       <div>
@@ -18,7 +49,7 @@ export const ClerkDashboard = () => {
           </div>
           <h3 className="font-bold text-lg mb-1">Representantes</h3>
           <p className="text-sm text-gray-500 mb-4">Gestionar datos y asignación de alumnos.</p>
-          <span className="text-3xl font-bold text-gray-900">{MOCK_REPRESENTATIVES.length}</span>
+          <span className="text-3xl font-bold text-gray-900">{stats.representatives}</span>
         </div>
 
         <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 hover:shadow-md transition-shadow">
@@ -27,7 +58,7 @@ export const ClerkDashboard = () => {
           </div>
           <h3 className="font-bold text-lg mb-1">Docentes</h3>
           <p className="text-sm text-gray-500 mb-4">Registro y asignación de cargas.</p>
-          <span className="text-3xl font-bold text-gray-900">{MOCK_TEACHERS.length}</span>
+          <span className="text-3xl font-bold text-gray-900">{stats.teachers}</span>
         </div>
 
         <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 hover:shadow-md transition-shadow">
@@ -36,7 +67,7 @@ export const ClerkDashboard = () => {
           </div>
           <h3 className="font-bold text-lg mb-1">Asignaturas</h3>
           <p className="text-sm text-gray-500 mb-4">Control de horarios y secciones.</p>
-          <span className="text-3xl font-bold text-gray-900">{MOCK_SUBJECTS.length}</span>
+          <span className="text-3xl font-bold text-gray-900">{stats.subjects}</span>
         </div>
       </div>
 

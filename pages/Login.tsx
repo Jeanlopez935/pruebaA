@@ -4,32 +4,37 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { Role } from '../types';
 import { BG_IMAGE_URL } from '../constants';
-import { School, User, Lock, HelpCircle } from 'lucide-react';
+import { School, User, Lock, HelpCircle, X } from 'lucide-react';
 
 export const Login = () => {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
-  const [role, setRole] = useState<Role>('representante');
-  const { login } = useAuth();
+  const [showForgotPassword, setShowForgotPassword] = useState(false);
+  const { login, user, error } = useAuth();
   const navigate = useNavigate();
 
-  const handleLogin = (e: React.FormEvent) => {
+  // Redirect when user is authenticated
+  React.useEffect(() => {
+    if (user) {
+      switch (user.role) {
+        case 'representante': navigate('/rep/dashboard'); break;
+        case 'docente': navigate('/docente/dashboard'); break;
+        case 'admin': navigate('/admin/dashboard'); break;
+        case 'oficinista': navigate('/oficinista/dashboard'); break;
+        default: navigate('/');
+      }
+    }
+  }, [user, navigate]);
+
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!username || !password) return;
 
-    // Simple mock logic for demo purposes
-    login(username, role);
-    
-    switch (role) {
-      case 'representante': navigate('/rep/dashboard'); break;
-      case 'docente': navigate('/docente/dashboard'); break;
-      case 'admin': navigate('/admin/dashboard'); break;
-      case 'oficinista': navigate('/oficinista/dashboard'); break;
-    }
+    await login(username, password);
   };
 
   const handleForgotPassword = () => {
-    alert("Debe informar al personal educativo para la recuperación de su contraseña");
+    setShowForgotPassword(true);
   };
 
   return (
@@ -38,33 +43,19 @@ export const Login = () => {
       <div className="w-full md:w-1/2 lg:w-2/5 flex items-center justify-center p-8 bg-white shadow-2xl z-10">
         <div className="w-full max-w-md">
           <div className="text-center mb-10">
-            <div className="mx-auto w-20 h-20 bg-primary rounded-2xl flex items-center justify-center text-white mb-4 shadow-lg">
-              <School size={48} />
+            <div className="mx-auto w-24 h-24 mb-4 flex items-center justify-center">
+              <img src="/logoueagru.jpg.png" alt="Logo UEAGRU" className="w-full h-full object-contain" />
             </div>
             <h1 className="text-2xl font-bold text-gray-900">Bienvenido a la Plataforma Educativa</h1>
             <p className="text-gray-500 mt-2">U.E. Adventista "Gral. Rafael Urdaneta"</p>
           </div>
 
           <form onSubmit={handleLogin} className="space-y-6">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Rol de Usuario</label>
-              <div className="grid grid-cols-2 gap-2">
-                {(['representante', 'docente', 'admin', 'oficinista'] as Role[]).map((r) => (
-                  <button
-                    key={r}
-                    type="button"
-                    onClick={() => setRole(r)}
-                    className={`py-2 px-3 text-sm font-medium rounded-md capitalize transition-colors ${
-                      role === r 
-                        ? 'bg-primary text-white shadow-sm' 
-                        : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                    }`}
-                  >
-                    {r}
-                  </button>
-                ))}
+            {error && (
+              <div className="bg-red-50 text-red-600 p-3 rounded-lg text-sm text-center">
+                {error}
               </div>
-            </div>
+            )}
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">Usuario / Cédula</label>
@@ -123,9 +114,9 @@ export const Login = () => {
 
       {/* Right Side - Image */}
       <div className="hidden md:block w-1/2 lg:w-3/5 relative">
-        <img 
-          src={BG_IMAGE_URL} 
-          alt="Institución" 
+        <img
+          src="/foto_ueagru.jpg.png"
+          alt="Institución"
           className="absolute inset-0 w-full h-full object-cover"
         />
         <div className="absolute inset-0 bg-primary/40 mix-blend-multiply backdrop-blur-[2px]"></div>
@@ -134,6 +125,64 @@ export const Login = () => {
           <p className="text-lg text-gray-100">Formando líderes con valores cristianos para el futuro.</p>
         </div>
       </div>
+
+      {/* Forgot Password Modal */}
+      {showForgotPassword && (
+        <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden transform transition-all scale-100">
+            <div className="bg-primary p-6 text-white flex justify-between items-start">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-white/20 rounded-lg">
+                  <HelpCircle size={24} />
+                </div>
+                <h3 className="text-xl font-bold">Recuperación de Contraseña</h3>
+              </div>
+              <button
+                onClick={() => setShowForgotPassword(false)}
+                className="text-white/70 hover:text-white transition-colors"
+              >
+                <X size={24} />
+              </button>
+            </div>
+
+            <div className="p-8">
+              <div className="mb-6 text-center">
+                <div className="w-20 h-20 mb-4 flex items-center justify-center mx-auto">
+                  <img src="/logoueagru.jpg.png" alt="Logo" className="w-full h-full object-contain" />
+                </div>
+                <p className="text-gray-600 leading-relaxed">
+                  Por motivos de seguridad, la recuperación de contraseña debe realizarse presencialmente.
+                </p>
+              </div>
+
+              <div className="bg-gray-50 rounded-xl p-4 border border-gray-100 mb-6">
+                <h4 className="font-bold text-gray-800 mb-2 text-sm uppercase">Instrucciones:</h4>
+                <ul className="text-sm text-gray-600 space-y-2">
+                  <li className="flex items-start gap-2">
+                    <span className="w-1.5 h-1.5 bg-primary rounded-full mt-1.5"></span>
+                    Diríjase a la <strong>Coordinación Administrativa</strong> de la institución.
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <span className="w-1.5 h-1.5 bg-primary rounded-full mt-1.5"></span>
+                    Presente su <strong>Cédula de Identidad</strong> para validar su titularidad.
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <span className="w-1.5 h-1.5 bg-primary rounded-full mt-1.5"></span>
+                    Solicite el restablecimiento de sus credenciales.
+                  </li>
+                </ul>
+              </div>
+
+              <button
+                onClick={() => setShowForgotPassword(false)}
+                className="w-full py-3 bg-primary text-white rounded-xl font-bold hover:bg-blue-800 transition-all transform active:scale-95 shadow-lg shadow-blue-900/20"
+              >
+                Entendido
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

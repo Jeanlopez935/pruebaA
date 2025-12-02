@@ -43,16 +43,29 @@ export interface Grade {
 }
 
 export interface Payment {
-  id: string;
-  studentId: string;
+  id: number;
+  student: number;
   concept: string;
-  amountUsd: number;
-  amountBs: number;
-  status: 'pending' | 'verified' | 'rejected' | 'unpaid';
-  date: string;
-  reference?: string;
-  adminNote?: string;
-  exchangeRate?: number; // Historical rate for the payment
+  amount_usd: string;
+  amount_bs: string;
+  rate_applied: string;
+  date_reported: string;
+  reference_number: string;
+  proof_image: string | null;
+  status: 'PENDING' | 'VERIFIED' | 'REJECTED';
+  admin_note?: string;
+  // Read-only fields from serializer
+  student_name?: string;
+  student_lastname?: string;
+  student_grade?: string;
+  student_section?: string;
+  representative_name?: string;
+  representative_lastname?: string;
+  representative_cedula?: string;
+  student_cedula?: string;
+  representative_phone?: string;
+  representative_email?: string;
+  representative_address?: string;
 }
 
 export interface Representative {

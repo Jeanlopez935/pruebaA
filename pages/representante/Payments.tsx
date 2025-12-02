@@ -1,54 +1,129 @@
-
 import React, { useState, useRef, useEffect } from 'react';
-import { MOCK_STUDENTS, MOCK_PAYMENTS, BCV_RATE } from '../../constants';
+import client from '../../api/client';
+import { Student, Payment } from '../../types';
 import { DollarSign, Upload, AlertTriangle, CheckCircle, Clock, X, FileText } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 
+interface PaymentConcept {
+  id: number;
+  name: string;
+  amount_usd: string;
+}
+
 export const RepresentativePayments = () => {
   const { user } = useAuth();
-  
-  // Filter students belonging to this parent
-  const myStudents = MOCK_STUDENTS.filter(s => s.parentId === user?.id);
-  
-  const [selectedStudentId, setSelectedStudentId] = useState(myStudents.length > 0 ? myStudents[0].id : '');
+
+  const [students, setStudents] = useState<Student[]>([]);
+  const [payments, setPayments] = useState<Payment[]>([]);
+  const [paymentConcepts, setPaymentConcepts] = useState<PaymentConcept[]>([]);
+  const [exchangeRate, setExchangeRate] = useState<number>(0);
+
+  const [selectedStudentId, setSelectedStudentId] = useState('');
   const [view, setView] = useState<'list' | 'report'>('list');
-  
-  // Update selected student if user changes or on initial load
-  useEffect(() => {
-    if (myStudents.length > 0 && !myStudents.find(s => s.id === selectedStudentId)) {
-      setSelectedStudentId(myStudents[0].id);
-    }
-  }, [user, myStudents, selectedStudentId]);
+  const [loading, setLoading] = useState(true);
 
   // Form State
-  const [reportConcept, setReportConcept] = useState('');
+  const [selectedConceptId, setSelectedConceptId] = useState(''); // Can be "concept_ID" or "retry_ID"
+  const [amountUsd, setAmountUsd] = useState<string>('0');
   const [formData, setFormData] = useState({
-    billingName: '', // Nombre o Razón Social
-    reference: '',   // Referencia Bancaria
-    rif: '',         // Número del RIF
-    billingAddress: '', // Dirección Fiscal
-    phone: '',       // Número Telefónico
-    email: ''        // Correo Electrónico
+    billingName: '',
+    reference: '',
+    rif: '',
+    billingAddress: '',
+    phone: '',
+    email: ''
   });
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const payments = MOCK_PAYMENTS.filter(p => p.studentId === selectedStudentId);
-  const pendingPayments = payments.filter(p => p.status !== 'verified');
-  const historyPayments = payments.filter(p => p.status === 'verified');
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        // Fetch Students
+        const studentsRes = await client.get('students/');
+        const fetchedStudents = studentsRes.data.map((s: any) => ({
+          id: s.id.toString(),
+          name: `${s.first_name} ${s.last_name}`,
+          cedula: s.id_number,
+          grade: s.current_grade,
+          section: s.section,
+          parentId: s.representative.toString()
+        }));
+        setStudents(fetchedStudents);
+        if (fetchedStudents.length > 0 && !selectedStudentId) {
+          setSelectedStudentId(fetchedStudents[0].id);
+        }
 
-  // Filter payments that can be reported (Unpaid or Rejected)
-  // Excludes 'pending' (In Review) and 'verified'
-  const reportablePayments = payments.filter(p => p.status === 'unpaid' || p.status === 'rejected');
+        // Fetch Exchange Rate (Latest)
+        // Fetch Exchange Rate (Latest from BCV)
+        try {
+          const rateRes = await client.get('rates/current/');
+          if (rateRes.data.rate) {
+            setExchangeRate(parseFloat(rateRes.data.rate));
+          } else {
+            setExchangeRate(36.5); // Fallback
+          }
+        } catch (e) {
+          console.error("Error fetching rate", e);
+          setExchangeRate(36.5);
+        }
 
-  const selectedPaymentForReport = reportablePayments.find(p => p.id === reportConcept);
+        // Fetch Payment Concepts
+        const conceptsRes = await client.get('payment-concepts/');
+        setPaymentConcepts(conceptsRes.data);
 
-  // Helper to format currency
+      } catch (error) {
+        console.error("Error fetching initial data", error);
+      } finally {
+        setLoading(false);
+      }
+    };
+    fetchData();
+  }, []);
+
+  useEffect(() => {
+    if (!selectedStudentId) return;
+    const fetchPayments = async () => {
+      try {
+        const res = await client.get(`payments/?student_id=${selectedStudentId}`);
+        setPayments(res.data);
+      } catch (error) {
+        console.error("Error fetching payments", error);
+      }
+    };
+    fetchPayments();
+  }, [selectedStudentId]);
+
+  const pendingPayments = payments.filter(p => p.status !== 'VERIFIED');
+  const historyPayments = payments.filter(p => p.status === 'VERIFIED');
+  const rejectedPayments = payments.filter(p => p.status === 'REJECTED');
+
   const formatBs = (amount: number) => `Bs. ${amount.toLocaleString('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
     setFormData(prev => ({ ...prev, [name]: value }));
+  };
+
+  const handleConceptChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const value = e.target.value;
+    setSelectedConceptId(value);
+
+    if (value.startsWith('concept_')) {
+      const conceptId = parseInt(value.split('_')[1]);
+      const concept = paymentConcepts.find(c => c.id === conceptId);
+      if (concept) {
+        setAmountUsd(concept.amount_usd);
+      }
+    } else if (value.startsWith('retry_')) {
+      const paymentId = parseInt(value.split('_')[1]);
+      const payment = rejectedPayments.find(p => p.id === paymentId);
+      if (payment) {
+        setAmountUsd(payment.amount_usd.toString());
+      }
+    } else {
+      setAmountUsd('0');
+    }
   };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -65,18 +140,75 @@ export const RepresentativePayments = () => {
     }
   };
 
+  const handleSubmit = async () => {
+    if (!selectedFile || !selectedStudentId || !selectedConceptId) return;
+
+    const data = new FormData();
+    data.append('student', selectedStudentId);
+    data.append('amount_usd', amountUsd);
+    data.append('amount_bs', (parseFloat(amountUsd) * exchangeRate).toFixed(2));
+    data.append('rate_applied', exchangeRate.toString());
+
+    // Determine concept logic
+    let conceptText = '';
+    if (selectedConceptId.startsWith('concept_')) {
+      const conceptId = selectedConceptId.split('_')[1];
+      data.append('payment_concept', conceptId);
+      const concept = paymentConcepts.find(c => c.id === parseInt(conceptId));
+      conceptText = concept ? concept.name : 'Pago';
+    } else if (selectedConceptId.startsWith('retry_')) {
+      const paymentId = selectedConceptId.split('_')[1];
+      const payment = rejectedPayments.find(p => p.id === parseInt(paymentId));
+      conceptText = payment ? `Reintento: ${payment.concept}` : 'Reintento Pago';
+      // Ideally we might want to update the existing payment, but creating a new one is safer for history
+    }
+    data.append('concept', conceptText);
+
+    data.append('reference_number', formData.reference);
+    data.append('proof_image', selectedFile);
+    data.append('billing_name', formData.billingName);
+    data.append('billing_id', formData.rif);
+    data.append('billing_address', formData.billingAddress);
+
+    try {
+      await client.post('payments/', data, {
+        headers: {
+          'Content-Type': 'multipart/form-data'
+        }
+      });
+      alert("Pago reportado exitosamente");
+      setView('list');
+      // Refresh payments
+      const res = await client.get(`payments/?student_id=${selectedStudentId}`);
+      setPayments(res.data);
+
+      // Reset form
+      setFormData({ billingName: '', reference: '', rif: '', billingAddress: '', phone: '', email: '' });
+      setSelectedConceptId('');
+      setAmountUsd('0');
+      setSelectedFile(null);
+
+    } catch (error) {
+      console.error("Error reporting payment", error);
+      alert("Error al reportar el pago");
+    }
+  };
+
   // Validation Logic
-  const isFormValid = 
-    reportConcept !== '' && 
+  const isFormValid =
+    selectedConceptId !== '' &&
+    parseFloat(amountUsd) > 0 &&
     formData.billingName.trim() !== '' &&
-    formData.reference.trim() !== '' && 
+    formData.reference.trim() !== '' &&
     formData.rif.trim() !== '' &&
     formData.billingAddress.trim() !== '' &&
-    formData.email.trim() !== '' && 
-    formData.phone.trim() !== '' && 
     selectedFile !== null;
 
-  if (myStudents.length === 0) {
+  if (loading) {
+    return <div className="p-8 text-center">Cargando...</div>;
+  }
+
+  if (students.length === 0) {
     return <div className="p-8 text-center text-gray-500">No tiene estudiantes asignados.</div>;
   }
 
@@ -87,67 +219,83 @@ export const RepresentativePayments = () => {
           <h2 className="text-2xl font-bold">Reportar un Pago</h2>
           <p className="text-blue-100 mt-1">Complete los datos para verificar su pago y generar la factura fiscal.</p>
         </div>
-        
+
         <div className="p-8 space-y-6">
           <div className="grid md:grid-cols-2 gap-6">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Alumno</label>
-              <select 
+              <select
                 value={selectedStudentId}
                 disabled
                 className="w-full p-3 bg-gray-50 border border-gray-300 rounded-lg text-gray-500 cursor-not-allowed"
               >
-                {myStudents.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                {students.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
               </select>
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Concepto del Pago <span className="text-red-500">*</span></label>
-              <select 
-                value={reportConcept}
-                onChange={(e) => setReportConcept(e.target.value)}
+              <select
+                value={selectedConceptId}
+                onChange={handleConceptChange}
                 className="w-full p-3 border border-gray-300 bg-white rounded-lg focus:ring-primary focus:border-primary text-gray-900"
               >
-                <option value="">Seleccione un pago pendiente...</option>
-                {reportablePayments.map(p => (
-                  <option key={p.id} value={p.id}>
-                    {p.concept} (${p.amountUsd}) {p.status === 'rejected' ? '(Rechazado - Reintentar)' : ''}
-                  </option>
-                ))}
+                <option value="">Seleccione un concepto...</option>
+                <optgroup label="Pagos Disponibles">
+                  {paymentConcepts.map(concept => {
+                    const isPendingOrVerified = payments.some(p =>
+                      p.concept === concept.name && (p.status === 'PENDING' || p.status === 'VERIFIED')
+                    );
+                    if (isPendingOrVerified) return null;
+
+                    return (
+                      <option key={`concept_${concept.id}`} value={`concept_${concept.id}`}>
+                        {concept.name} - ${concept.amount_usd}
+                      </option>
+                    );
+                  })}
+                </optgroup>
+                {rejectedPayments.length > 0 && (
+                  <optgroup label="Reintentar Pagos Rechazados">
+                    {rejectedPayments.map(p => (
+                      <option key={`retry_${p.id}`} value={`retry_${p.id}`}>
+                        Reintentar: {p.concept} (${p.amount_usd})
+                      </option>
+                    ))}
+                  </optgroup>
+                )}
               </select>
-              {reportablePayments.length === 0 && (
-                <p className="text-xs text-green-600 mt-1">¡Estás al día! No tienes pagos pendientes por reportar.</p>
-              )}
             </div>
           </div>
 
-          {selectedPaymentForReport && (
-             <div className="bg-blue-50 border border-blue-100 p-4 rounded-lg flex items-center gap-4">
-               <div className="bg-white p-2 rounded-full shadow-sm">
-                 <DollarSign className="text-primary" />
-               </div>
-               <div>
-                 <p className="text-sm font-semibold text-gray-700">Monto a Pagar:</p>
-                 <p className="text-xl font-bold text-primary">
-                   ${selectedPaymentForReport.amountUsd.toFixed(2)} 
-                   <span className="text-sm font-normal text-gray-600"> / {formatBs(selectedPaymentForReport.amountUsd * BCV_RATE)}</span>
-                 </p>
-                 <p className="text-xs text-gray-500 mt-1">Tasa BCV Actual: {BCV_RATE.toFixed(2)} Bs/$</p>
-               </div>
-             </div>
-          )}
+          <div className="bg-blue-50 border border-blue-100 p-4 rounded-lg flex items-center gap-4">
+            <div className="bg-white p-2 rounded-full shadow-sm">
+              <DollarSign className="text-primary" />
+            </div>
+            <div className="flex-1">
+              <label className="block text-sm font-semibold text-gray-700 mb-1">Monto a Pagar</label>
+              <div className="flex gap-4 items-baseline">
+                <span className="text-2xl font-bold text-gray-900">${amountUsd}</span>
+                <span className="text-gray-400">|</span>
+                <span className="text-xl font-bold text-primary">
+                  {formatBs(parseFloat(amountUsd || '0') * exchangeRate)}
+                </span>
+              </div>
+              <p className="text-xs text-gray-500 mt-1">Tasa BCV Actual: {exchangeRate.toFixed(2)} Bs/$</p>
+            </div>
+          </div>
 
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">Comprobante de Pago <span className="text-red-500">*</span></label>
-            <input 
-              type="file" 
+            <input
+              type="file"
               ref={fileInputRef}
               onChange={handleFileChange}
-              className="hidden" 
+              className="hidden"
               accept="image/png, image/jpeg, application/pdf"
             />
-            
+
             {!selectedFile ? (
-              <div 
+              <div
                 onClick={() => fileInputRef.current?.click()}
                 className="border-2 border-dashed border-gray-300 bg-white rounded-xl p-8 text-center hover:bg-gray-50 transition-colors cursor-pointer group"
               >
@@ -166,7 +314,7 @@ export const RepresentativePayments = () => {
                     <p className="text-xs text-gray-500">{(selectedFile.size / 1024).toFixed(2)} KB</p>
                   </div>
                 </div>
-                <button 
+                <button
                   onClick={clearFile}
                   className="p-2 hover:bg-green-100 rounded-full text-gray-500 hover:text-red-500 transition-colors"
                 >
@@ -178,102 +326,103 @@ export const RepresentativePayments = () => {
 
           <div className="space-y-4 pt-2 border-t border-gray-100">
             <h3 className="text-lg font-semibold text-gray-800">Datos para Facturación Fiscal</h3>
-            
+
             <div className="grid md:grid-cols-2 gap-6">
               <div className="md:col-span-2">
                 <label className="block text-sm font-medium text-gray-700 mb-1">Nombre o Razón Social <span className="text-red-500">*</span></label>
-                <input 
-                  type="text" 
+                <input
+                  type="text"
                   name="billingName"
                   value={formData.billingName}
                   onChange={handleInputChange}
-                  placeholder="Nombre completo o Razón Social" 
-                  className="w-full p-3 border border-gray-300 bg-white rounded-lg focus:ring-primary focus:border-primary text-gray-900" 
+                  placeholder="Nombre completo o Razón Social"
+                  className="w-full p-3 border border-gray-300 bg-white rounded-lg focus:ring-primary focus:border-primary text-gray-900"
                 />
               </div>
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Referencia Bancaria <span className="text-red-500">*</span></label>
-                <input 
-                  type="text" 
+                <input
+                  type="text"
                   name="reference"
                   value={formData.reference}
                   onChange={handleInputChange}
-                  placeholder="Ingrese todos los dígitos" 
-                  className="w-full p-3 border border-gray-300 bg-white rounded-lg focus:ring-primary focus:border-primary text-gray-900" 
+                  placeholder="Ingrese todos los dígitos"
+                  className="w-full p-3 border border-gray-300 bg-white rounded-lg focus:ring-primary focus:border-primary text-gray-900"
                 />
               </div>
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Número del RIF (V, J, E) <span className="text-red-500">*</span></label>
-                <input 
-                  type="text" 
+                <input
+                  type="text"
                   name="rif"
                   value={formData.rif}
                   onChange={handleInputChange}
-                  placeholder="Ej: V-12345678-9" 
-                  className="w-full p-3 border border-gray-300 bg-white rounded-lg focus:ring-primary focus:border-primary text-gray-900" 
+                  placeholder="Ej: V-12345678-9"
+                  className="w-full p-3 border border-gray-300 bg-white rounded-lg focus:ring-primary focus:border-primary text-gray-900"
                 />
                 <p className="text-xs text-gray-500 mt-1">V: Natural, J: Jurídico, E: Extranjero</p>
               </div>
 
               <div className="md:col-span-2">
                 <label className="block text-sm font-medium text-gray-700 mb-1">Dirección Fiscal <span className="text-red-500">*</span></label>
-                <input 
-                  type="text" 
+                <input
+                  type="text"
                   name="billingAddress"
                   value={formData.billingAddress}
                   onChange={handleInputChange}
-                  placeholder="Dirección fiscal asociada al RIF" 
-                  className="w-full p-3 border border-gray-300 bg-white rounded-lg focus:ring-primary focus:border-primary text-gray-900" 
+                  placeholder="Dirección fiscal asociada al RIF"
+                  className="w-full p-3 border border-gray-300 bg-white rounded-lg focus:ring-primary focus:border-primary text-gray-900"
                 />
               </div>
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Número Telefónico de Contacto <span className="text-red-500">*</span></label>
-                <input 
-                  type="tel" 
+                <input
+                  type="tel"
                   name="phone"
                   value={formData.phone}
                   onChange={handleInputChange}
-                  placeholder="04XX-XXXXXXX" 
-                  className="w-full p-3 border border-gray-300 bg-white rounded-lg focus:ring-primary focus:border-primary text-gray-900" 
+                  placeholder="04XX-XXXXXXX"
+                  className="w-full p-3 border border-gray-300 bg-white rounded-lg focus:ring-primary focus:border-primary text-gray-900"
                 />
               </div>
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Correo Electrónico de Contacto <span className="text-red-500">*</span></label>
-                <input 
-                  type="email" 
+                <input
+                  type="email"
                   name="email"
                   value={formData.email}
                   onChange={handleInputChange}
-                  placeholder="ejemplo@correo.com" 
-                  className="w-full p-3 border border-gray-300 bg-white rounded-lg focus:ring-primary focus:border-primary text-gray-900" 
+                  placeholder="ejemplo@correo.com"
+                  className="w-full p-3 border border-gray-300 bg-white rounded-lg focus:ring-primary focus:border-primary text-gray-900"
                 />
               </div>
             </div>
           </div>
 
           <div className="pt-6 flex gap-4">
-            <button 
+            <button
               onClick={() => {
                 setView('list');
                 setFormData({ billingName: '', reference: '', rif: '', billingAddress: '', email: '', phone: '' });
-                setReportConcept('');
+                setSelectedConceptId('');
+                setAmountUsd('0');
                 setSelectedFile(null);
               }}
               className="flex-1 py-3 border border-gray-300 text-gray-700 font-bold rounded-lg hover:bg-gray-50 transition-colors"
             >
               Cancelar
             </button>
-            <button 
+            <button
+              onClick={handleSubmit}
               disabled={!isFormValid}
-              className={`flex-1 py-3 font-bold rounded-lg shadow-md transition-all ${
-                isFormValid 
-                  ? 'bg-primary text-white hover:bg-blue-800' 
-                  : 'bg-gray-300 text-gray-500 cursor-not-allowed'
-              }`}
+              className={`flex-1 py-3 font-bold rounded-lg shadow-md transition-all ${isFormValid
+                ? 'bg-primary text-white hover:bg-blue-800'
+                : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                }`}
             >
               Reportar Pago
             </button>
@@ -292,15 +441,66 @@ export const RepresentativePayments = () => {
         </div>
         <div className="flex items-center gap-3 w-full md:w-auto">
           <label className="text-sm font-medium text-gray-700 whitespace-nowrap">Seleccionar Estudiante:</label>
-          <select 
+          <select
             value={selectedStudentId}
             onChange={(e) => setSelectedStudentId(e.target.value)}
             className="p-2 border border-gray-300 rounded-lg text-sm bg-white shadow-sm focus:ring-primary focus:border-primary flex-1"
           >
-            {myStudents.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+            {students.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
           </select>
         </div>
       </div>
+
+      <div className="flex justify-end">
+        <button
+          onClick={() => setView('report')}
+          className="bg-primary text-white px-4 py-2 rounded-lg font-bold shadow-md hover:bg-blue-800 transition-colors"
+        >
+          + Reportar Nuevo Pago
+        </button>
+      </div>
+
+      {/* Available Concepts */}
+      <section>
+        <h3 className="text-lg font-bold text-gray-800 mb-4 flex items-center gap-2">
+          <DollarSign size={20} className="text-green-600" />
+          Pagos Disponibles
+        </h3>
+        <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {paymentConcepts.map(concept => {
+            // Check if this concept is already pending or verified for the selected student
+            const isPendingOrVerified = payments.some(p =>
+              p.concept === concept.name && (p.status === 'PENDING' || p.status === 'VERIFIED')
+            );
+
+            if (isPendingOrVerified) return null;
+
+            return (
+              <div key={concept.id} className="bg-white p-4 rounded-xl shadow-sm border border-gray-200 flex justify-between items-center hover:shadow-md transition-shadow">
+                <div>
+                  <p className="font-bold text-gray-900">{concept.name}</p>
+                  <p className="text-green-600 font-bold">${concept.amount_usd}</p>
+                </div>
+                <button
+                  onClick={() => {
+                    setSelectedConceptId(`concept_${concept.id}`);
+                    setAmountUsd(concept.amount_usd);
+                    setView('report');
+                  }}
+                  className="px-4 py-2 bg-green-50 text-green-700 font-bold rounded-lg hover:bg-green-100 transition-colors text-sm"
+                >
+                  Pagar
+                </button>
+              </div>
+            );
+          })}
+          {paymentConcepts.filter(c => !payments.some(p => p.concept === c.name && (p.status === 'PENDING' || p.status === 'VERIFIED'))).length === 0 && (
+            <div className="col-span-full p-8 text-center text-gray-500 bg-white rounded-xl border border-gray-200">
+              No hay conceptos de pago disponibles.
+            </div>
+          )}
+        </div>
+      </section>
 
       {/* Pending Payments */}
       <section>
@@ -326,44 +526,33 @@ export const RepresentativePayments = () => {
                     <tr>
                       <td className="px-6 py-4 font-medium text-gray-900 align-top">{payment.concept}</td>
                       <td className="px-6 py-4 align-top">
-                        <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                          payment.status === 'rejected' 
-                            ? 'bg-red-100 text-red-800' 
-                            : payment.status === 'unpaid'
-                            ? 'bg-gray-200 text-gray-700'
-                            : 'bg-yellow-100 text-yellow-800'
-                        }`}>
-                          {payment.status === 'rejected' ? 'Rechazado' : payment.status === 'unpaid' ? 'Pendiente' : 'En Revisión'}
+                        <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium ${payment.status === 'REJECTED'
+                          ? 'bg-red-100 text-red-800'
+                          : 'bg-yellow-100 text-yellow-800'
+                          }`}>
+                          {payment.status === 'REJECTED' ? 'Rechazado' : 'En Revisión'}
                         </span>
                       </td>
-                      <td className="px-6 py-4 text-right align-top font-bold">${payment.amountUsd}</td>
+                      <td className="px-6 py-4 text-right align-top font-bold">${payment.amount_usd}</td>
                       <td className="px-6 py-4 text-right text-gray-600 align-top">
-                        <div>{formatBs(payment.amountUsd * BCV_RATE)}</div>
-                        <div className="text-xs text-gray-400">Tasa BCV Actual: {BCV_RATE.toFixed(2)}</div>
+                        <div>{formatBs(parseFloat(payment.amount_bs))}</div>
+                        <div className="text-xs text-gray-400">Tasa: {parseFloat(payment.rate_applied).toFixed(2)}</div>
                       </td>
                       <td className="px-6 py-4 text-center align-top">
-                        <button 
-                          onClick={() => {
-                            setReportConcept(payment.id); // Pre-select if re-reporting or reporting specific
-                            setView('report');
-                          }}
-                          className={`text-xs font-bold uppercase px-3 py-2 rounded-lg ${
-                            (payment.status === 'rejected' || payment.status === 'unpaid') 
-                            ? 'bg-primary text-white hover:bg-blue-800' 
-                            : 'bg-gray-100 text-gray-400 cursor-not-allowed'
-                          }`}
-                          disabled={payment.status === 'pending' || payment.status === 'verified'}
+                        <button
+                          className={`text-xs font-bold uppercase px-3 py-2 rounded-lg bg-gray-100 text-gray-400 cursor-not-allowed`}
+                          disabled
                         >
-                          {payment.status === 'rejected' ? 'Reportar Pago' : payment.status === 'unpaid' ? 'Reportar Pago' : 'En Proceso'}
+                          En Proceso
                         </button>
                       </td>
                     </tr>
                     {/* Admin Note Row for Rejected Payments */}
-                    {payment.status === 'rejected' && payment.adminNote && (
+                    {payment.status === 'REJECTED' && payment.admin_note && (
                       <tr className="bg-red-50">
                         <td colSpan={5} className="px-6 py-3 text-sm border-t border-red-100">
                           <p className="font-bold text-red-800 mb-1">Nota del Administrador:</p>
-                          <p className="text-red-700">{payment.adminNote}</p>
+                          <p className="text-red-700">{payment.admin_note}</p>
                         </td>
                       </tr>
                     )}
@@ -401,14 +590,11 @@ export const RepresentativePayments = () => {
               {historyPayments.map(payment => (
                 <tr key={payment.id}>
                   <td className="px-6 py-4 font-medium text-gray-900">{payment.concept}</td>
-                  <td className="px-6 py-4 text-gray-500">{payment.date}</td>
-                  <td className="px-6 py-4 text-right">${payment.amountUsd}</td>
+                  <td className="px-6 py-4 text-gray-500">{new Date(payment.date_reported).toLocaleDateString()}</td>
+                  <td className="px-6 py-4 text-right">${payment.amount_usd}</td>
                   <td className="px-6 py-4 text-right text-gray-500">
-                    {/* Use historical rate if available, otherwise fallback */}
-                    <div>{formatBs(payment.amountBs)}</div>
-                    {payment.exchangeRate && (
-                      <div className="text-xs text-gray-400">Tasa: {payment.exchangeRate.toFixed(2)}</div>
-                    )}
+                    <div>{formatBs(parseFloat(payment.amount_bs))}</div>
+                    <div className="text-xs text-gray-400">Tasa: {parseFloat(payment.rate_applied).toFixed(2)}</div>
                   </td>
                   <td className="px-6 py-4 text-center">
                     <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
@@ -417,6 +603,11 @@ export const RepresentativePayments = () => {
                   </td>
                 </tr>
               ))}
+              {historyPayments.length === 0 && (
+                <tr>
+                  <td colSpan={5} className="px-6 py-8 text-center text-gray-500">No hay historial de pagos.</td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>

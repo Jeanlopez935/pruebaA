@@ -1,9 +1,8 @@
-
-import React, { useState } from 'react';
-import { MOCK_STUDENTS, MOCK_SUBJECTS } from '../../constants';
+import React, { useState, useEffect } from 'react';
+import client from '../../api/client';
+import { Student, Subject } from '../../types';
 
 // Standardized academic blocks + breaks
-// Updated: Receso 09:45 - 10:30, Day ends 01:30 PM
 const TIME_BLOCKS = [
   { id: 1, label: '07:00 - 07:45', start: '07:00 AM', end: '07:45 AM', type: 'class' },
   { id: 2, label: '07:45 - 08:30', start: '07:45 AM', end: '08:30 AM', type: 'class' },
@@ -19,45 +18,78 @@ const TIME_BLOCKS = [
 const DAYS = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes'];
 
 export const RepresentativeSchedule = () => {
-  const [selectedStudentId, setSelectedStudentId] = useState(MOCK_STUDENTS[0].id);
-  const student = MOCK_STUDENTS.find(s => s.id === selectedStudentId)!;
+  const [students, setStudents] = useState<Student[]>([]);
+  const [subjects, setSubjects] = useState<Subject[]>([]);
+  const [selectedStudentId, setSelectedStudentId] = useState('');
+  const [loading, setLoading] = useState(true);
 
-  // Filter subjects for the student (In a real app, filtering by grade/section would be robust)
-  // For mock purposes, we assume all MOCK_SUBJECTS belong to the 5to Grado A student context
-  // or we filter by the student's section if needed.
-  const subjects = MOCK_SUBJECTS.filter(sub => sub.grade === student.grade && sub.section === student.section);
-
-  const getSubjectForSlot = (day: string, startTime: string) => {
-    // Find a subject that has a schedule item matching the day and specific start time
-    // OR falls within a double block. 
-    
-    // Convert time string "HH:MM AM" to comparable minutes
-    const toMinutes = (timeStr: string) => {
-      let [time, modifier] = timeStr.split(' ');
-      let [hours, minutes] = time.split(':').map(Number);
-      if (hours === 12 && modifier === 'AM') hours = 0;
-      if (hours !== 12 && modifier === 'PM') hours += 12;
-      return hours * 60 + minutes;
-    };
-
-    const slotStartMins = toMinutes(startTime);
-
-    for (const sub of subjects) {
-      if (sub.schedule) {
-        for (const item of sub.schedule) {
-          if (item.day === day) {
-            const itemStartMins = toMinutes(item.startTime);
-            const itemEndMins = toMinutes(item.endTime);
-            // If the slot starts exactly when the class starts, or is inside the duration
-            if (slotStartMins >= itemStartMins && slotStartMins < itemEndMins) {
-              return sub.name;
-            }
-          }
+  useEffect(() => {
+    const fetchStudents = async () => {
+      try {
+        const response = await client.get('students/');
+        const fetchedStudents = response.data.map((s: any) => ({
+          id: s.id.toString(),
+          name: `${s.first_name} ${s.last_name}`,
+          cedula: s.id_number,
+          grade: s.current_grade,
+          section: s.section,
+          parentId: s.representative.toString()
+        }));
+        setStudents(fetchedStudents);
+        if (fetchedStudents.length > 0) {
+          setSelectedStudentId(fetchedStudents[0].id);
         }
+      } catch (error) {
+        console.error("Error fetching students", error);
+      } finally {
+        setLoading(false);
       }
+    };
+    fetchStudents();
+  }, []);
+
+  useEffect(() => {
+    // In a real app, we would fetch the schedule for the specific student/section
+    // For now, we fetch subjects and will display them in a mock schedule or list
+    const fetchSubjects = async () => {
+      try {
+        const res = await client.get('subjects/');
+        const fetchedSubjects = res.data.map((s: any) => ({
+          id: s.id.toString(),
+          name: s.name,
+          grade: s.grade_level,
+          section: 'A',
+          teacherId: s.teacher?.toString(),
+          schedule: [] // Backend doesn't support schedule blocks yet
+        }));
+        setSubjects(fetchedSubjects);
+      } catch (error) {
+        console.error("Error fetching subjects", error);
+      }
+    };
+    fetchSubjects();
+  }, []);
+
+  const student = students.find(s => s.id === selectedStudentId);
+
+  // Filter subjects for the student's grade
+  const studentSubjects = student
+    ? subjects.filter(sub => sub.grade === student.grade)
+    : [];
+
+  // Mock schedule distribution for demo purposes since backend lacks schedule model
+  const getSubjectForSlot = (day: string, startTime: string) => {
+    // Simple deterministic assignment based on day/time hash for demo
+    if (!studentSubjects.length) return null;
+    const index = (day.length + startTime.length) % (studentSubjects.length + 2);
+    if (index < studentSubjects.length) {
+      return studentSubjects[index].name;
     }
     return null;
   };
+
+  if (loading) return <div className="p-8 text-center">Cargando horario...</div>;
+  if (!student) return <div className="p-8 text-center">No hay estudiantes seleccionados.</div>;
 
   return (
     <div className="space-y-6">
@@ -65,12 +97,12 @@ export const RepresentativeSchedule = () => {
         <h2 className="text-xl font-bold text-gray-800">Horario Académico</h2>
         <div className="flex items-center gap-3 w-full sm:w-auto">
           <span className="text-sm font-medium text-gray-600 whitespace-nowrap">Seleccionar Estudiante:</span>
-          <select 
+          <select
             value={selectedStudentId}
             onChange={(e) => setSelectedStudentId(e.target.value)}
             className="w-full sm:w-52 p-2 border border-gray-300 rounded-lg text-sm focus:ring-primary focus:border-primary bg-white"
           >
-            {MOCK_STUDENTS.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+            {students.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
           </select>
         </div>
       </div>
@@ -78,13 +110,13 @@ export const RepresentativeSchedule = () => {
       <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200 overflow-x-auto">
         <div className="mb-6 flex flex-col sm:flex-row items-center justify-between gap-4 border-b border-gray-100 pb-4">
           <h3 className="text-lg font-semibold text-primary w-full sm:w-1/3 text-left">Horario de Clases</h3>
-          
+
           <div className="text-gray-600 font-medium w-full sm:w-1/3 text-center">
             Año Escolar 2025-2026
           </div>
 
           <div className="text-gray-900 font-bold w-full sm:w-1/3 text-right">
-             {student.grade}, Sección "{student.section}"
+            {student.grade}, Sección "{student.section}"
           </div>
         </div>
 
@@ -107,7 +139,7 @@ export const RepresentativeSchedule = () => {
                     <td className="px-4 py-3 text-sm font-medium text-gray-500 border-r border-gray-200 whitespace-nowrap">
                       {block.label}
                     </td>
-                    
+
                     {block.type === 'break' ? (
                       <td colSpan={5} className="px-4 py-3 text-center text-sm font-bold text-gray-400 tracking-widest uppercase bg-gray-100/50">
                         {block.name}
