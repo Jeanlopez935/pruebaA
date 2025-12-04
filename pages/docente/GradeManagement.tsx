@@ -2,7 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import client from '../../api/client';
 import { Subject, Student, Evaluation, Grade } from '../../types';
-import { Save, Plus, Calendar } from 'lucide-react';
+import { Save, Plus, Calendar, Edit, Trash2 } from 'lucide-react';
+import { isValidText } from '../../utils/validation';
 
 export const TeacherGradeManagement = () => {
   const [subjects, setSubjects] = useState<Subject[]>([]);
@@ -21,9 +22,11 @@ export const TeacherGradeManagement = () => {
   const [newEvalDate, setNewEvalDate] = useState(new Date().toISOString().split('T')[0]);
   const [newEvalPercentage, setNewEvalPercentage] = useState('');
 
+  const [newEvalLapso, setNewEvalLapso] = useState('1');
+
   const [loading, setLoading] = useState(true);
 
-  // Fetch Subjects
+  // Fetch Subjects on mount
   useEffect(() => {
     const fetchSubjects = async () => {
       try {
@@ -32,9 +35,8 @@ export const TeacherGradeManagement = () => {
           id: s.id.toString(),
           name: s.name,
           grade: s.grade_level,
-          section: s.section || 'A',
-          teacherId: s.teacher?.toString(),
-          schedule: []
+          section: s.section,
+          teacherId: s.teacher?.toString()
         }));
         setSubjects(fetchedSubjects);
         if (fetchedSubjects.length > 0) {
@@ -62,25 +64,21 @@ export const TeacherGradeManagement = () => {
           subjectId: e.subject.toString(),
           name: e.name,
           percentage: parseFloat(e.percentage),
-          date: e.date
+          date: e.date,
+          lapso: e.lapso
         }));
         setEvaluations(fetchedEvals);
         if (fetchedEvals.length > 0) {
-          setSelectedEvaluationId(fetchedEvals[0].id);
+          setSelectedEvaluationId(fetchedEvals[fetchedEvals.length - 1].id);
         } else {
           setSelectedEvaluationId('');
         }
 
-        // Fetch Students and filter by Subject's Grade and Section
-        const studentsRes = await client.get('students/');
-        const currentSubject = subjects.find(s => s.id === selectedSubjectId);
-
-        const fetchedStudents = studentsRes.data
-          .filter((s: any) => {
-            if (!currentSubject) return false;
-            return s.current_grade === currentSubject.grade && s.section === currentSubject.section;
-          })
-          .map((s: any) => ({
+        // Fetch Students for this subject (by grade/section)
+        const subject = subjects.find(s => s.id === selectedSubjectId);
+        if (subject) {
+          const studentRes = await client.get(`students/?grade=${subject.grade}&section=${subject.section}`);
+          const fetchedStudents = studentRes.data.map((s: any) => ({
             id: s.id.toString(),
             name: `${s.first_name} ${s.last_name}`,
             cedula: s.id_number,
@@ -88,22 +86,24 @@ export const TeacherGradeManagement = () => {
             section: s.section,
             parentId: s.representative.toString()
           }));
-        setStudents(fetchedStudents);
+          setStudents(fetchedStudents);
+
+          // Initialize inputs
+          const inputs: any = {};
+          fetchedStudents.forEach((s: any) => inputs[s.id] = 0);
+          setGradeInputs(inputs);
+        }
 
       } catch (error) {
-        console.error("Error fetching subject data", error);
+        console.error("Error fetching data", error);
       }
     };
     fetchData();
-  }, [selectedSubjectId]);
+  }, [selectedSubjectId, subjects]);
 
   // Fetch Grades when Evaluation changes
   useEffect(() => {
-    if (!selectedEvaluationId) {
-      setGrades([]);
-      setGradeInputs({});
-      return;
-    }
+    if (!selectedEvaluationId) return;
 
     const fetchGrades = async () => {
       try {
@@ -114,14 +114,16 @@ export const TeacherGradeManagement = () => {
           subjectId: g.subject_id?.toString() || '',
           evaluationName: g.evaluation_name || '',
           score: parseFloat(g.score),
-          date: g.evaluation_date || ''
+          date: g.evaluation_date || '',
+          evaluationLapso: g.evaluation_lapso
         }));
         setGrades(fetchedGrades);
 
-        // Initialize inputs with existing grades
-        const inputs: { [key: string]: number } = {};
-        fetchedGrades.forEach((g: any) => {
-          inputs[g.studentId] = g.score;
+        // Update inputs with existing grades
+        const inputs: any = {};
+        students.forEach(s => {
+          const grade = fetchedGrades.find((g: any) => g.studentId === s.id);
+          inputs[s.id] = grade ? grade.score : 0;
         });
         setGradeInputs(inputs);
 
@@ -130,7 +132,19 @@ export const TeacherGradeManagement = () => {
       }
     };
     fetchGrades();
-  }, [selectedEvaluationId]);
+  }, [selectedEvaluationId, students]);
+
+  // Filter State
+  const [filterLapso, setFilterLapso] = useState<number>(1);
+
+  // Edit State
+  const [isEditingEval, setIsEditingEval] = useState(false);
+  const [editingEvalId, setEditingEvalId] = useState('');
+
+  // ... (existing useEffects)
+
+  // Filtered Evaluations
+  const filteredEvaluations = evaluations.filter(e => e.lapso === filterLapso);
 
   const handleCreateEvaluation = async () => {
     if (!newEvalName || !newEvalDate || !newEvalPercentage || !selectedSubjectId) return;
@@ -140,7 +154,8 @@ export const TeacherGradeManagement = () => {
         subject: selectedSubjectId,
         name: newEvalName,
         date: newEvalDate,
-        percentage: parseFloat(newEvalPercentage)
+        percentage: parseFloat(newEvalPercentage),
+        lapso: parseInt(newEvalLapso)
       });
       alert("Evaluación creada exitosamente");
       setIsCreating(false);
@@ -154,7 +169,8 @@ export const TeacherGradeManagement = () => {
         subjectId: e.subject.toString(),
         name: e.name,
         percentage: parseFloat(e.percentage),
-        date: e.date
+        date: e.date,
+        lapso: e.lapso
       }));
       setEvaluations(fetchedEvals);
       // Select the new one (last one usually)
@@ -221,14 +237,82 @@ export const TeacherGradeManagement = () => {
 
   const selectedEvaluation = evaluations.find(e => e.id === selectedEvaluationId);
   const selectedSubject = subjects.find(s => s.id === selectedSubjectId);
+  const handleUpdateEvaluation = async () => {
+    if (!editingEvalId || !newEvalName || !newEvalDate || !newEvalPercentage) return;
 
-  if (loading) return <div className="p-8 text-center">Cargando...</div>;
+    try {
+      await client.patch(`evaluations/${editingEvalId}/`, {
+        name: newEvalName,
+        date: newEvalDate,
+        percentage: parseFloat(newEvalPercentage),
+        lapso: parseInt(newEvalLapso)
+      });
+      alert("Evaluación actualizada exitosamente");
+      setIsEditingEval(false);
+      setEditingEvalId('');
+      setNewEvalName('');
+      setNewEvalPercentage('');
+
+      // Refresh
+      const evalRes = await client.get(`evaluations/?subject_id=${selectedSubjectId}`);
+      const fetchedEvals = evalRes.data.map((e: any) => ({
+        id: e.id.toString(),
+        subjectId: e.subject.toString(),
+        name: e.name,
+        percentage: parseFloat(e.percentage),
+        date: e.date,
+        lapso: e.lapso
+      }));
+      setEvaluations(fetchedEvals);
+    } catch (error) {
+      console.error("Error updating evaluation", error);
+      alert("Error al actualizar evaluación");
+    }
+  };
+
+  const handleDeleteEvaluation = async () => {
+    if (!selectedEvaluationId) return;
+    if (!confirm("¿Está seguro de eliminar esta evaluación? Se perderán todas las calificaciones asociadas.")) return;
+
+    try {
+      await client.delete(`evaluations/${selectedEvaluationId}/`);
+      alert("Evaluación eliminada");
+      setSelectedEvaluationId('');
+
+      // Refresh
+      const evalRes = await client.get(`evaluations/?subject_id=${selectedSubjectId}`);
+      const fetchedEvals = evalRes.data.map((e: any) => ({
+        id: e.id.toString(),
+        subjectId: e.subject.toString(),
+        name: e.name,
+        percentage: parseFloat(e.percentage),
+        date: e.date,
+        lapso: e.lapso
+      }));
+      setEvaluations(fetchedEvals);
+    } catch (error) {
+      console.error("Error deleting evaluation", error);
+      alert("Error al eliminar evaluación");
+    }
+  };
+
+  const startEditEvaluation = () => {
+    if (!selectedEvaluation) return;
+    setNewEvalName(selectedEvaluation.name);
+    setNewEvalDate(selectedEvaluation.date);
+    setNewEvalPercentage(selectedEvaluation.percentage.toString());
+    setNewEvalLapso(selectedEvaluation.lapso.toString());
+    setEditingEvalId(selectedEvaluation.id);
+    setIsEditingEval(true);
+    setIsCreating(true); // Reuse the creation modal
+  };
 
   if (isCreating) {
     return (
       <div className="max-w-2xl mx-auto bg-white rounded-xl shadow-lg border border-gray-200 p-8">
-        <h2 className="text-2xl font-bold text-primary mb-6">Crear Nueva Evaluación</h2>
+        <h2 className="text-2xl font-bold text-primary mb-6">{isEditingEval ? 'Editar Evaluación' : 'Crear Nueva Evaluación'}</h2>
         <div className="space-y-4">
+          {/* ... (inputs same as before) */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Asignatura</label>
             <input
@@ -244,7 +328,11 @@ export const TeacherGradeManagement = () => {
             <input
               type="text"
               value={newEvalName}
-              onChange={e => setNewEvalName(e.target.value)}
+              onChange={e => {
+                if (isValidText(e.target.value)) {
+                  setNewEvalName(e.target.value);
+                }
+              }}
               className="w-full p-3 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary"
               placeholder="Ej: Proyecto Final"
             />
@@ -259,6 +347,18 @@ export const TeacherGradeManagement = () => {
             />
           </div>
           <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Lapso Académico</label>
+            <select
+              value={newEvalLapso}
+              onChange={e => setNewEvalLapso(e.target.value)}
+              className="w-full p-3 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary bg-white"
+            >
+              <option value="1">Lapso 1</option>
+              <option value="2">Lapso 2</option>
+              <option value="3">Lapso 3</option>
+            </select>
+          </div>
+          <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Porcentaje (%)</label>
             <input
               type="number"
@@ -269,8 +369,10 @@ export const TeacherGradeManagement = () => {
             />
           </div>
           <div className="flex gap-4 pt-4">
-            <button onClick={() => setIsCreating(false)} className="flex-1 py-3 border border-gray-300 rounded-lg font-bold text-gray-700 hover:bg-gray-50">Cancelar</button>
-            <button onClick={handleCreateEvaluation} className="flex-1 py-3 bg-primary text-white rounded-lg font-bold hover:bg-blue-800">Guardar Evaluación</button>
+            <button onClick={() => { setIsCreating(false); setIsEditingEval(false); }} className="flex-1 py-3 border border-gray-300 rounded-lg font-bold text-gray-700 hover:bg-gray-50">Cancelar</button>
+            <button onClick={isEditingEval ? handleUpdateEvaluation : handleCreateEvaluation} className="flex-1 py-3 bg-primary text-white rounded-lg font-bold hover:bg-blue-800">
+              {isEditingEval ? 'Actualizar Evaluación' : 'Guardar Evaluación'}
+            </button>
           </div>
         </div>
       </div>
@@ -279,45 +381,81 @@ export const TeacherGradeManagement = () => {
 
   return (
     <div className="space-y-6">
+      {/* ... (header) */}
       <div className="flex justify-between items-center">
         <h1 className="text-2xl font-bold text-gray-900">Gestión de Calificaciones</h1>
         <Link to="/docente/resumen" className="text-primary font-medium hover:underline">Volver al Resumen</Link>
       </div>
 
       <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-200">
-        <div className="grid md:grid-cols-3 gap-6 mb-6">
-          <div>
+        <div className="grid md:grid-cols-4 gap-6 mb-6">
+          <div className="md:col-span-1">
             <label className="block text-sm font-medium text-gray-700 mb-1">Asignatura</label>
             <select
               value={selectedSubjectId}
               onChange={(e) => setSelectedSubjectId(e.target.value)}
               className="w-full p-2 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary bg-white"
             >
-              {subjects.map(s => <option key={s.id} value={s.id}>{s.name} ({s.grade})</option>)}
+              {subjects.map(s => <option key={s.id} value={s.id}>{s.name} ({s.grade} "{s.section}")</option>)}
             </select>
           </div>
-          <div>
+
+          <div className="md:col-span-1">
+            <label className="block text-sm font-medium text-gray-700 mb-1">Filtrar por Lapso</label>
+            <select
+              value={filterLapso}
+              onChange={(e) => setFilterLapso(parseInt(e.target.value))}
+              className="w-full p-2 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary bg-white"
+            >
+              <option value={1}>Lapso 1</option>
+              <option value={2}>Lapso 2</option>
+              <option value={3}>Lapso 3</option>
+            </select>
+          </div>
+
+          <div className="md:col-span-1">
             <label className="block text-sm font-medium text-gray-700 mb-1">Evaluación</label>
             <select
               value={selectedEvaluationId}
               onChange={(e) => setSelectedEvaluationId(e.target.value)}
               className="w-full p-2 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary bg-white"
-              disabled={evaluations.length === 0}
+              disabled={filteredEvaluations.length === 0}
             >
-              {evaluations.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
+              {filteredEvaluations.map(e => <option key={e.id} value={e.id}>{e.name}</option>)}
             </select>
-            {evaluations.length === 0 && <p className="text-xs text-red-500 mt-1">No hay evaluaciones creadas.</p>}
+            {filteredEvaluations.length === 0 && <p className="text-xs text-red-500 mt-1">No hay evaluaciones en este lapso.</p>}
           </div>
-          <div className="flex items-end">
+
+          <div className="flex items-end gap-2">
             <button
-              onClick={() => setIsCreating(true)}
-              className="w-full py-2 bg-green-600 text-white rounded-lg font-medium hover:bg-green-700 flex justify-center items-center gap-2 transition-colors"
+              onClick={() => { setIsCreating(true); setIsEditingEval(false); setNewEvalName(''); setNewEvalPercentage(''); }}
+              className="flex-1 py-2 bg-green-600 text-white rounded-lg font-medium hover:bg-green-700 flex justify-center items-center gap-2 transition-colors"
+              title="Nueva Evaluación"
             >
-              <Plus size={18} /> Nueva Evaluación
+              <Plus size={18} />
             </button>
+            {selectedEvaluationId && (
+              <>
+                <button
+                  onClick={startEditEvaluation}
+                  className="flex-1 py-2 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 flex justify-center items-center gap-2 transition-colors"
+                  title="Editar Evaluación"
+                >
+                  <Edit size={18} />
+                </button>
+                <button
+                  onClick={handleDeleteEvaluation}
+                  className="flex-1 py-2 bg-red-600 text-white rounded-lg font-medium hover:bg-red-700 flex justify-center items-center gap-2 transition-colors"
+                  title="Eliminar Evaluación"
+                >
+                  <Trash2 size={18} />
+                </button>
+              </>
+            )}
           </div>
         </div>
 
+        {/* ... (rest of the component) */}
         {selectedEvaluation && (
           <div className="flex items-center gap-4 mb-6 p-4 bg-yellow-50 rounded-lg border border-yellow-100">
             <Calendar className="text-yellow-700" size={20} />
@@ -325,11 +463,17 @@ export const TeacherGradeManagement = () => {
               <span className="text-sm font-bold text-yellow-800">Fecha de Evaluación:</span>
               <span className="text-sm text-yellow-900">{new Date(selectedEvaluation.date).toLocaleDateString('es-VE')}</span>
             </div>
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-bold text-yellow-800">Porcentaje:</span>
+              <span className="text-sm text-yellow-900">{selectedEvaluation.percentage}%</span>
+            </div>
           </div>
         )}
 
         <div className="bg-blue-50 p-4 rounded-lg mb-6 border border-blue-100">
-          <p className="text-blue-800 font-medium">Período Académico: 2025 - 2026 (Lapso 1)</p>
+          <p className="text-blue-800 font-medium">
+            Período Académico: 2025 - 2026 (Lapso {filterLapso})
+          </p>
         </div>
 
         <table className="w-full text-left text-sm border border-gray-200 rounded-lg overflow-hidden">

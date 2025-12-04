@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import client from '../../api/client';
 import { Search, Edit, UserMinus, Plus, Lock, X, Save, Eye, EyeOff, ExternalLink, Trash2 } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
+import { CedulaInput } from '../../components/CedulaInput';
+import { isValidName, isValidText } from '../../utils/validation';
 
 export const ClerkRepresentatives = () => {
   const navigate = useNavigate();
@@ -16,6 +18,11 @@ export const ClerkRepresentatives = () => {
   // Password Reset State
   const [newPassword, setNewPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+
+  // Assign Student State
+  const [showAssignModal, setShowAssignModal] = useState(false);
+  const [allStudents, setAllStudents] = useState<any[]>([]);
+  const [studentSearch, setStudentSearch] = useState('');
 
   // Create Form State
   const [formData, setFormData] = useState({
@@ -61,9 +68,38 @@ export const ClerkRepresentatives = () => {
     }
   };
 
+  const fetchAllStudents = async () => {
+    try {
+      const res = await client.get('students/');
+      setAllStudents(res.data);
+    } catch (error) {
+      console.error("Error fetching all students", error);
+    }
+  };
+
+  useEffect(() => {
+    if (showAssignModal) {
+      fetchAllStudents();
+    }
+  }, [showAssignModal]);
+
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
-    setFormData(prev => ({ ...prev, [name]: value }));
+
+    if (name === 'first_name' || name === 'last_name') {
+      if (isValidName(value)) {
+        setFormData(prev => ({ ...prev, [name]: value }));
+      }
+    } else if (name === 'address') {
+      if (isValidText(value)) {
+        setFormData(prev => ({ ...prev, [name]: value }));
+      }
+    } else {
+      // For other fields (email, phone, etc.), just basic text validation
+      if (isValidText(value)) {
+        setFormData(prev => ({ ...prev, [name]: value }));
+      }
+    }
   };
 
   const handleEditClick = () => {
@@ -78,13 +114,25 @@ export const ClerkRepresentatives = () => {
       email: rep.email,
       phone_number: rep.phone_number,
       address: rep.address,
-      password: '' // Don't show hash
+      password: rep.visible_password || '' // Show visible password
     });
     setIsEditing(true);
     setIsCreating(true);
   };
 
   const handleSubmit = async () => {
+    // Validation
+    if (!formData.first_name || !formData.last_name || !formData.username ||
+      !formData.email || !formData.phone_number || !formData.address) {
+      alert("Todos los campos son obligatorios");
+      return;
+    }
+
+    if (!isEditing && !formData.password) {
+      alert("La contraseña es obligatoria para nuevos representantes");
+      return;
+    }
+
     try {
       if (isEditing && selectedRepId) {
         // Create a copy and remove password if empty to avoid validation error or overwriting with empty string
@@ -124,6 +172,7 @@ export const ClerkRepresentatives = () => {
       alert("Contraseña actualizada exitosamente");
       setShowPasswordModal(false);
       setNewPassword('');
+      fetchRepresentatives();
     } catch (error) {
       console.error("Error updating password", error);
       alert("Error al actualizar contraseña");
@@ -141,7 +190,28 @@ export const ClerkRepresentatives = () => {
     }
   };
 
+  const handleAssignStudent = async (studentId: number) => {
+    if (!selectedRepId) return;
+    try {
+      await client.patch(`students/${studentId}/`, {
+        representative: selectedRepId
+      });
+      alert("Estudiante asignado exitosamente");
+      setShowAssignModal(false);
+      fetchAssignedStudents(selectedRepId);
+    } catch (error) {
+      console.error("Error assigning student", error);
+      alert("Error al asignar estudiante");
+    }
+  };
+
   const selectedRep = representatives.find(r => r.id === selectedRepId);
+
+  const filteredStudents = allStudents.filter(s =>
+    s.first_name.toLowerCase().includes(studentSearch.toLowerCase()) ||
+    s.last_name.toLowerCase().includes(studentSearch.toLowerCase()) ||
+    s.id_number.includes(studentSearch)
+  );
 
   if (loading) return <div>Cargando...</div>;
 
@@ -212,13 +282,10 @@ export const ClerkRepresentatives = () => {
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">Cédula (Usuario)</label>
-                  <input
-                    name="username"
+                  <CedulaInput
                     value={formData.username}
-                    onChange={handleInputChange}
-                    type="text"
-                    className="w-full p-3 border border-gray-300 rounded-lg"
-                    disabled={isEditing}
+                    onChange={(val) => setFormData(prev => ({ ...prev, username: val }))}
+                    placeholder="12.345.678"
                   />
                 </div>
                 <div>
@@ -305,10 +372,10 @@ export const ClerkRepresentatives = () => {
                     <ExternalLink size={14} /> Gestionar
                   </button>
                   <button
-                    onClick={() => navigate('/oficinista/estudiantes?create=true&repId=' + selectedRep.id)}
+                    onClick={() => setShowAssignModal(true)}
                     className="flex items-center gap-2 px-3 py-1.5 bg-primary text-white rounded-lg text-sm font-medium hover:bg-blue-800"
                   >
-                    <Plus size={14} /> Agregar Hijo
+                    <Plus size={14} /> Asignar Estudiante
                   </button>
                 </div>
               </div>
@@ -359,26 +426,115 @@ export const ClerkRepresentatives = () => {
       {showPasswordModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 backdrop-blur-sm">
           <div className="bg-white rounded-xl p-6 w-full max-w-md shadow-2xl">
-            <h3 className="text-lg font-bold text-gray-900 mb-4">Cambiar Contraseña</h3>
-            <div className="relative mb-6">
-              <input
-                type={showPassword ? "text" : "password"}
-                value={newPassword}
-                onChange={(e) => setNewPassword(e.target.value)}
-                className="w-full p-3 border border-gray-300 rounded-lg pr-10"
-                placeholder="Nueva contraseña"
-              />
-              <button
-                type="button"
-                onClick={() => setShowPassword(!showPassword)}
-                className="absolute right-3 top-3.5 text-gray-400 hover:text-gray-600"
-              >
-                {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
-              </button>
+            <h3 className="text-lg font-bold text-gray-900 mb-4">Gestión de Contraseña</h3>
+
+            <div className="mb-6 bg-yellow-50 p-4 rounded-lg border border-yellow-100">
+              <p className="text-sm text-yellow-800 font-bold mb-1">Contraseña Actual:</p>
+              <p className="font-mono text-lg text-gray-900 select-all">
+                {selectedRep?.visible_password || 'No visible (Encriptada)'}
+              </p>
+            </div>
+
+            <div className="mb-6">
+              <label className="block text-sm font-medium text-gray-700 mb-2">Nueva Contraseña (Opcional)</label>
+              <div className="relative">
+                <input
+                  type={showPassword ? "text" : "password"}
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  className="w-full p-3 border border-gray-300 rounded-lg pr-10"
+                  placeholder="Nueva contraseña"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                >
+                  {showPassword ? <EyeOff size={20} /> : <Eye size={20} />}
+                </button>
+              </div>
             </div>
             <div className="flex justify-end gap-3">
               <button onClick={() => setShowPasswordModal(false)} className="px-4 py-2 bg-gray-200 rounded-lg font-bold text-gray-700">Cancelar</button>
               <button onClick={handlePasswordReset} className="px-4 py-2 bg-primary text-white rounded-lg font-bold hover:bg-blue-800">Guardar</button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* Assign Student Modal */}
+      {showAssignModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 backdrop-blur-sm">
+          <div className="bg-white rounded-xl p-6 w-full max-w-2xl shadow-2xl h-[80vh] flex flex-col">
+            <div className="flex justify-between items-center mb-6 border-b border-gray-100 pb-4">
+              <h3 className="text-xl font-bold text-gray-900">Asignar Estudiante</h3>
+              <button onClick={() => setShowAssignModal(false)} className="text-gray-400 hover:text-gray-600">
+                <X size={24} />
+              </button>
+            </div>
+
+            <div className="mb-4 relative">
+              <Search className="absolute left-3 top-3 text-gray-400" size={20} />
+              <input
+                type="text"
+                placeholder="Buscar estudiante por nombre o cédula..."
+                value={studentSearch}
+                onChange={(e) => setStudentSearch(e.target.value)}
+                className="w-full pl-10 p-3 border border-gray-300 rounded-lg"
+              />
+            </div>
+
+            <div className="flex-1 overflow-y-auto border border-gray-100 rounded-lg">
+              <table className="w-full text-left text-sm">
+                <thead className="bg-gray-50 sticky top-0">
+                  <tr>
+                    <th className="px-4 py-3 font-bold text-gray-700">Nombre</th>
+                    <th className="px-4 py-3 font-bold text-gray-700">Cédula</th>
+                    <th className="px-4 py-3 font-bold text-gray-700">Representante Actual</th>
+                    <th className="px-4 py-3 text-center">Acción</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {filteredStudents.map(student => {
+                    const currentRep = representatives.find(r => r.id === student.representative);
+                    const isAssignedToCurrent = student.representative === selectedRepId;
+
+                    return (
+                      <tr key={student.id} className="hover:bg-gray-50">
+                        <td className="px-4 py-3 font-medium">{student.first_name} {student.last_name}</td>
+                        <td className="px-4 py-3 font-mono text-xs text-gray-500">{student.id_number}</td>
+                        <td className="px-4 py-3 text-xs text-gray-500">
+                          {currentRep ? `${currentRep.first_name} ${currentRep.last_name}` : 'Sin Asignar'}
+                        </td>
+                        <td className="px-4 py-3 text-center">
+                          {isAssignedToCurrent ? (
+                            <span className="text-xs bg-green-100 text-green-700 px-2 py-1 rounded-full font-bold">
+                              Asignado
+                            </span>
+                          ) : (
+                            <button
+                              onClick={() => {
+                                if (confirm(`¿Está seguro de asignar a ${student.first_name} a este representante? Se eliminará del representante anterior.`)) {
+                                  handleAssignStudent(student.id);
+                                }
+                              }}
+                              className="px-3 py-1 bg-primary text-white text-xs rounded hover:bg-blue-800 transition-colors"
+                            >
+                              Asignar
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                  {filteredStudents.length === 0 && (
+                    <tr>
+                      <td colSpan={4} className="px-4 py-8 text-center text-gray-500">
+                        No se encontraron estudiantes.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
             </div>
           </div>
         </div>

@@ -33,6 +33,12 @@ class Evaluation(models.Model):
     subject = models.ForeignKey(Subject, on_delete=models.CASCADE, related_name='evaluations')
     name = models.CharField(max_length=100) # e.g., "Parcial 1"
     percentage = models.DecimalField(max_digits=5, decimal_places=2)
+    LAPSO_CHOICES = (
+        (1, 'Lapso 1'),
+        (2, 'Lapso 2'),
+        (3, 'Lapso 3'),
+    )
+    lapso = models.IntegerField(choices=LAPSO_CHOICES, default=1)
     date = models.DateField()
     
     def __str__(self):

@@ -18,26 +18,38 @@ export interface Student {
   parentId: string;
 }
 
-export interface Subject {
-  id: string;
-  name: string;
-  grade: string;
-  section: string;
-  teacherId: string;
-  schedule?: ScheduleItem[];
-}
-
 export interface ScheduleItem {
+  id: number;
   day: string;
-  startTime: string;
-  endTime: string;
+  start_time: string;
+  end_time: string;
   room: string;
 }
 
+export interface Subject {
+  id: string;
+  name: string;
+  grade_level: string;
+  section: string;
+  teacher: string | null;
+  schedules?: ScheduleItem[];
+}
+
+export interface Evaluation {
+  id: string;
+  subjectId: string;
+  name: string;
+  percentage: number;
+  date: string;
+  lapso: number;
+}
+
 export interface Grade {
+  id: string;
   studentId: string;
   subjectId: string;
   evaluationName: string;
+  evaluationLapso?: number;
   score: number; // 0-20
   date: string;
 }

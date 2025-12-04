@@ -1,7 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import client from '../../api/client';
-import { Plus, Edit, Save, X, BookOpen, Trash2, Eye, EyeOff } from 'lucide-react';
+import { Plus, Edit, Save, X, BookOpen, Trash2, Eye, EyeOff, Check, Search } from 'lucide-react';
 import { Subject } from '../../types';
+import { CedulaInput } from '../../components/CedulaInput';
+import { isValidName, isValidText } from '../../utils/validation';
 
 export const ClerkTeachers = () => {
   const [teachers, setTeachers] = useState<any[]>([]);
@@ -11,6 +13,11 @@ export const ClerkTeachers = () => {
   const [selectedTeacherId, setSelectedTeacherId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [showPassword, setShowPassword] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
+
+  // New State for Creation Mode
+  const [selectedSubjectIds, setSelectedSubjectIds] = useState<string[]>([]);
+  const [subjectSearchTerm, setSubjectSearchTerm] = useState('');
 
   // Form State
   const [formData, setFormData] = useState({
@@ -51,7 +58,22 @@ export const ClerkTeachers = () => {
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
-    setFormData(prev => ({ ...prev, [name]: value }));
+
+    if (name === 'first_name' || name === 'last_name') {
+      if (isValidName(value)) {
+        setFormData(prev => ({ ...prev, [name]: value }));
+      }
+    } else if (name === 'address' || name === 'specialty') {
+      if (isValidText(value)) {
+        setFormData(prev => ({ ...prev, [name]: value }));
+      }
+    } else {
+      // For other fields (email, phone, etc.), just basic text validation or specific regex if needed
+      // For now, apply basic text validation to prevent spam
+      if (isValidText(value)) {
+        setFormData(prev => ({ ...prev, [name]: value }));
+      }
+    }
   };
 
   const handleEditClick = (teacher: any) => {
@@ -62,7 +84,7 @@ export const ClerkTeachers = () => {
       email: teacher.user.email,
       phone_number: teacher.user.phone_number,
       address: teacher.user.address,
-      password: '', // Don't show hash
+      password: teacher.user.visible_password || '', // Show visible password
       specialty: teacher.specialty
     });
     setSelectedTeacherId(teacher.id);
@@ -71,19 +93,40 @@ export const ClerkTeachers = () => {
   };
 
   const handleSubjectAssignment = async (subjectId: string, assign: boolean) => {
-    if (!selectedTeacherId) return;
-    try {
-      await client.patch(`subjects/${subjectId}/`, {
-        teacher: assign ? selectedTeacherId : null
-      });
-      fetchSubjects(); // Refresh to show update
-    } catch (error) {
-      console.error("Error updating subject assignment", error);
-      alert("Error al asignar/desasignar materia");
+    if (isEditing && selectedTeacherId) {
+      // Edit Mode: Immediate Update
+      try {
+        await client.patch(`subjects/${subjectId}/`, {
+          teacher: assign ? selectedTeacherId : null
+        });
+        fetchSubjects(); // Refresh to show update
+      } catch (error) {
+        console.error("Error updating subject assignment", error);
+        alert("Error al asignar/desasignar materia");
+      }
+    } else {
+      // Create Mode: Local State Update
+      if (assign) {
+        setSelectedSubjectIds(prev => [...prev, subjectId]);
+      } else {
+        setSelectedSubjectIds(prev => prev.filter(id => id !== subjectId));
+      }
     }
   };
 
   const handleSubmit = async () => {
+    // Validation
+    if (!formData.first_name || !formData.last_name || !formData.username ||
+      !formData.email || !formData.phone_number || !formData.address || !formData.specialty) {
+      alert("Todos los campos son obligatorios");
+      return;
+    }
+
+    if (!isEditing && !formData.password) {
+      alert("La contraseña es obligatoria para nuevos docentes");
+      return;
+    }
+
     try {
       if (isEditing && selectedTeacherId) {
         // Update Teacher
@@ -124,24 +167,36 @@ export const ClerkTeachers = () => {
         });
 
         const userId = userRes.data.id;
+        let newTeacherId = '';
 
         // 2. Create Teacher Profile
         try {
-          await client.post('teachers/', {
+          const teacherRes = await client.post('teachers/', {
             user_id: userId,
             specialty: formData.specialty
           });
+          newTeacherId = teacherRes.data.id;
         } catch (error) {
           console.error("Error creating teacher profile, rolling back user...", error);
           await client.delete(`users/${userId}/`);
           throw error;
         }
+
+        // 3. Assign Subjects (if any selected)
+        if (selectedSubjectIds.length > 0 && newTeacherId) {
+          await Promise.all(selectedSubjectIds.map(subjectId =>
+            client.patch(`subjects/${subjectId}/`, { teacher: newTeacherId })
+          ));
+        }
+
         alert("Docente creado exitosamente");
       }
 
       setIsCreating(false);
       setIsEditing(false);
       setSelectedTeacherId(null);
+      setSelectedSubjectIds([]);
+      setSubjectSearchTerm('');
       setFormData({
         first_name: '',
         last_name: '',
@@ -153,6 +208,7 @@ export const ClerkTeachers = () => {
         specialty: ''
       });
       fetchTeachers();
+      fetchSubjects(); // Refresh subjects to show new assignments
 
     } catch (error: any) {
       console.error("Error saving teacher", error);
@@ -224,14 +280,10 @@ export const ClerkTeachers = () => {
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">Cédula de Identidad (Usuario)</label>
-                  <input
-                    name="username"
+                  <CedulaInput
                     value={formData.username}
-                    onChange={handleInputChange}
-                    type="text"
-                    className="w-full p-3 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary"
-                    placeholder="V-XX.XXX.XXX"
-                    disabled={isEditing} // Cannot change username/cedula easily
+                    onChange={(val) => setFormData(prev => ({ ...prev, username: val }))}
+                    placeholder="12.345.678"
                   />
                 </div>
                 <div>
@@ -316,25 +368,68 @@ export const ClerkTeachers = () => {
               </div>
             </section>
 
-            {/* Subjects Assignment (Only in Edit Mode) */}
-            {isEditing && (
-              <section className="bg-gray-50 p-6 rounded-xl border border-gray-200">
-                <h3 className="text-lg font-semibold text-gray-800 mb-4 flex items-center gap-2">
-                  <BookOpen size={20} /> Asignaturas y Secciones
-                </h3>
-                <p className="text-sm text-gray-500 mb-4">Seleccione las asignaturas que impartirá este docente.</p>
+            {/* Subjects Assignment (Always visible now) */}
+            <section className="bg-gray-50 p-6 rounded-xl border border-gray-200">
+              <div className="flex justify-between items-center mb-4">
+                <div>
+                  <h3 className="text-lg font-semibold text-gray-800 flex items-center gap-2">
+                    <BookOpen size={20} /> Asignaturas y Secciones
+                  </h3>
+                  <p className="text-sm text-gray-500">Seleccione las asignaturas que impartirá este docente.</p>
+                </div>
+                <div className="relative w-64">
+                  <Search className="absolute left-3 top-2.5 text-gray-400" size={16} />
+                  <input
+                    type="text"
+                    placeholder="Buscar asignatura..."
+                    value={subjectSearchTerm}
+                    onChange={(e) => setSubjectSearchTerm(e.target.value)}
+                    className="w-full pl-9 p-2 border border-gray-300 rounded-lg text-sm focus:ring-primary focus:border-primary"
+                  />
+                </div>
+              </div>
 
-                <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-3">
-                  {subjects.map(subject => {
-                    const isAssigned = subject.teacherId === selectedTeacherId;
+              <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-3 max-h-96 overflow-y-auto">
+                {subjects
+                  .filter(subject => {
+                    // Filter 1: Must have schedule
+                    if (!subject.schedules || subject.schedules.length === 0) return false;
+
+                    // Filter 2: Search term
+                    const term = subjectSearchTerm.toLowerCase();
+                    const matchName = subject.name.toLowerCase().includes(term);
+                    const matchGrade = subject.grade_level.toLowerCase().includes(term);
+                    const matchSection = subject.section.toLowerCase().includes(term);
+
+                    return matchName || matchGrade || matchSection;
+                  })
+                  .map(subject => {
+                    // Determine assignment status
+                    let isAssigned = false;
+                    if (isEditing && selectedTeacherId) {
+                      isAssigned = String(subject.teacher) === String(selectedTeacherId);
+                    } else {
+                      isAssigned = selectedSubjectIds.includes(subject.id);
+                    }
+
+                    // Check if assigned to ANOTHER teacher (and not this one)
+                    const assignedToOther = subject.teacher && String(subject.teacher) !== String(selectedTeacherId);
+
                     return (
                       <div
                         key={subject.id}
                         className={`p-3 rounded-lg border cursor-pointer transition-all ${isAssigned
-                            ? 'bg-blue-100 border-blue-300 shadow-sm'
+                          ? 'bg-blue-100 border-blue-300 shadow-sm'
+                          : assignedToOther
+                            ? 'bg-gray-100 border-gray-200 opacity-60'
                             : 'bg-white border-gray-200 hover:bg-gray-50'
                           }`}
-                        onClick={() => handleSubjectAssignment(subject.id, !isAssigned)}
+                        onClick={() => {
+                          if (assignedToOther && !isAssigned) {
+                            if (!confirm("Esta asignatura ya tiene un docente asignado. ¿Desea reasignarla?")) return;
+                          }
+                          handleSubjectAssignment(subject.id, !isAssigned);
+                        }}
                       >
                         <div className="flex items-center gap-3">
                           <div className={`w-5 h-5 rounded border flex items-center justify-center ${isAssigned ? 'bg-primary border-primary' : 'border-gray-300 bg-white'
@@ -346,16 +441,23 @@ export const ClerkTeachers = () => {
                               {subject.name}
                             </p>
                             <p className="text-xs text-gray-500">
-                              {subject.grade} "{subject.section}"
+                              {subject.grade_level} "{subject.section}"
                             </p>
+                            {assignedToOther && (
+                              <p className="text-[10px] text-red-500 font-bold">Ocupado</p>
+                            )}
                           </div>
                         </div>
                       </div>
                     );
                   })}
-                </div>
-              </section>
-            )}
+                {subjects.filter(s => s.schedules && s.schedules.length > 0).length === 0 && (
+                  <div className="col-span-full text-center py-8 text-gray-500">
+                    No hay asignaturas con horario disponible. Cree asignaturas y horarios primero.
+                  </div>
+                )}
+              </div>
+            </section>
 
             <div className="flex justify-end gap-3 pt-4 border-t border-gray-100">
               <button
@@ -377,6 +479,18 @@ export const ClerkTeachers = () => {
         </div>
       ) : (
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+          <div className="p-4 border-b border-gray-200">
+            <div className="relative max-w-md">
+              <Search className="absolute left-3 top-2.5 text-gray-400" size={20} />
+              <input
+                type="text"
+                placeholder="Buscar por nombre, apellido, cédula o especialidad..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="w-full pl-10 p-2 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary"
+              />
+            </div>
+          </div>
           <table className="w-full text-left text-sm">
             <thead className="bg-gray-50 border-b border-gray-200">
               <tr>
@@ -387,7 +501,16 @@ export const ClerkTeachers = () => {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {teachers.map(teacher => (
+              {teachers.filter(teacher => {
+                const fullName = teacher.user ? `${teacher.user.first_name} ${teacher.user.last_name}` : '';
+                const username = teacher.user ? teacher.user.username : '';
+                const specialty = teacher.specialty || '';
+                const term = searchTerm.toLowerCase();
+
+                return fullName.toLowerCase().includes(term) ||
+                  username.includes(term) ||
+                  specialty.toLowerCase().includes(term);
+              }).map(teacher => (
                 <tr key={teacher.id} className="hover:bg-gray-50 transition-colors">
                   <td className="px-6 py-4 font-medium text-gray-900">
                     {teacher.user ? `${teacher.user.first_name} ${teacher.user.last_name}` : 'Sin Usuario'}
@@ -397,6 +520,13 @@ export const ClerkTeachers = () => {
                   </td>
                   <td className="px-6 py-4 text-gray-600">{teacher.specialty}</td>
                   <td className="px-6 py-4 flex justify-center gap-2">
+                    <button
+                      onClick={() => alert(`Contraseña de ${teacher.user.first_name}: ${teacher.user.visible_password || 'No visible'}`)}
+                      className="p-2 text-gray-500 hover:bg-gray-100 rounded-lg transition-colors"
+                      title="Ver Contraseña"
+                    >
+                      <Eye size={18} />
+                    </button>
                     <button
                       onClick={() => handleEditClick(teacher)}
                       className="p-2 text-primary hover:bg-blue-50 rounded-lg transition-colors"

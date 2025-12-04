@@ -21,7 +21,7 @@ export const TeacherDashboard = () => {
           id: s.id.toString(),
           name: s.name,
           grade: s.grade_level,
-          section: 'A', // Defaulting to A as section isn't in Subject model explicitly yet
+          section: s.section,
           teacherId: s.teacher?.toString(),
           schedule: []
         }));
@@ -64,7 +64,7 @@ export const TeacherDashboard = () => {
                     <BookOpen className="text-primary" size={24} />
                   </div>
                   <span className="text-xs font-semibold bg-gray-100 text-gray-600 px-2 py-1 rounded">
-                    {subject.grade}
+                    {subject.grade} "{subject.section}"
                   </span>
                 </div>
 

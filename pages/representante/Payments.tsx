@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import client from '../../api/client';
 import { Student, Payment } from '../../types';
 import { DollarSign, Upload, AlertTriangle, CheckCircle, Clock, X, FileText } from 'lucide-react';
+import { isValidText } from '../../utils/validation';
 import { useAuth } from '../../context/AuthContext';
 
 interface PaymentConcept {
@@ -102,7 +103,9 @@ export const RepresentativePayments = () => {
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
-    setFormData(prev => ({ ...prev, [name]: value }));
+    if (isValidText(value)) {
+      setFormData(prev => ({ ...prev, [name]: value }));
+    }
   };
 
   const handleConceptChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
@@ -353,16 +356,35 @@ export const RepresentativePayments = () => {
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Número del RIF (V, J, E) <span className="text-red-500">*</span></label>
-                <input
-                  type="text"
-                  name="rif"
-                  value={formData.rif}
-                  onChange={handleInputChange}
-                  placeholder="Ej: V-12345678-9"
-                  className="w-full p-3 border border-gray-300 bg-white rounded-lg focus:ring-primary focus:border-primary text-gray-900"
-                />
-                <p className="text-xs text-gray-500 mt-1">V: Natural, J: Jurídico, E: Extranjero</p>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Número del RIF (V, J, E, G) <span className="text-red-500">*</span></label>
+                <div className="flex gap-2">
+                  <select
+                    value={formData.rif.split('-')[0] || 'V'}
+                    onChange={(e) => {
+                      const type = e.target.value;
+                      const number = formData.rif.split('-')[1] || '';
+                      setFormData(prev => ({ ...prev, rif: `${type}-${number}` }));
+                    }}
+                    className="p-3 border border-gray-300 bg-gray-50 rounded-lg focus:ring-primary focus:border-primary w-20"
+                  >
+                    <option value="V">V</option>
+                    <option value="J">J</option>
+                    <option value="E">E</option>
+                    <option value="G">G</option>
+                  </select>
+                  <input
+                    type="text"
+                    value={formData.rif.split('-')[1] || ''}
+                    onChange={(e) => {
+                      const number = e.target.value.replace(/\D/g, ''); // Only numbers
+                      const type = formData.rif.split('-')[0] || 'V';
+                      setFormData(prev => ({ ...prev, rif: `${type}-${number}` }));
+                    }}
+                    placeholder="123456789"
+                    className="flex-1 p-3 border border-gray-300 bg-white rounded-lg focus:ring-primary focus:border-primary text-gray-900"
+                  />
+                </div>
+                <p className="text-xs text-gray-500 mt-1">Seleccione el tipo y escriba el número sin guiones.</p>
               </div>
 
               <div className="md:col-span-2">
@@ -428,7 +450,7 @@ export const RepresentativePayments = () => {
             </button>
           </div>
         </div>
-      </div>
+      </div >
     );
   }
 

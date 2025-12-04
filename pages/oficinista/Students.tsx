@@ -1,7 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import client from '../../api/client';
-import { Plus, Edit, Save, X, Calendar, Book, Clock } from 'lucide-react';
+import { Plus, Edit, Save, X, Calendar, Book, Clock, Search } from 'lucide-react';
 import { useLocation } from 'react-router-dom';
+import { CedulaInput } from '../../components/CedulaInput';
+import { isValidName } from '../../utils/validation';
 
 export const ClerkStudents = () => {
   const location = useLocation();
@@ -13,6 +15,7 @@ export const ClerkStudents = () => {
   const [selectedStudentId, setSelectedStudentId] = useState<number | null>(null);
   const [activeTab, setActiveTab] = useState<'personal' | 'academic'>('personal');
   const [loading, setLoading] = useState(true);
+  const [searchTerm, setSearchTerm] = useState('');
 
   // Form State
   const [formData, setFormData] = useState({
@@ -96,6 +99,13 @@ export const ClerkStudents = () => {
   };
 
   const handleSubmit = async () => {
+    // Validation
+    if (!formData.first_name || !formData.last_name || !formData.id_number ||
+      !formData.birth_date || !formData.current_grade || !formData.section || !formData.representative) {
+      alert("Todos los campos son obligatorios");
+      return;
+    }
+
     try {
       if (isEditing && selectedStudentId) {
         await client.patch(`students/${selectedStudentId}/`, formData);
@@ -116,6 +126,14 @@ export const ClerkStudents = () => {
     } catch (error) {
       console.error("Error saving student", error);
       alert("Error al guardar estudiante");
+    }
+  };
+
+  const handleNameChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const { name, value } = e.target;
+    // Use shared validation utility
+    if (isValidName(value)) {
+      setFormData(prev => ({ ...prev, [name]: value }));
     }
   };
 
@@ -170,13 +188,14 @@ export const ClerkStudents = () => {
 
           <form className="space-y-8" onSubmit={(e) => e.preventDefault()}>
             {activeTab === 'personal' ? (
+
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">Nombres</label>
                   <input
                     name="first_name"
                     value={formData.first_name}
-                    onChange={handleInputChange}
+                    onChange={handleNameChange}
                     type="text"
                     className="w-full p-3 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary"
                     placeholder="Ej: Ana Lucía"
@@ -187,21 +206,19 @@ export const ClerkStudents = () => {
                   <input
                     name="last_name"
                     value={formData.last_name}
-                    onChange={handleInputChange}
+                    onChange={handleNameChange}
                     type="text"
                     className="w-full p-3 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary"
                     placeholder="Ej: Pérez"
                   />
                 </div>
+
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">Cédula de Identidad / Escolar</label>
-                  <input
-                    name="id_number"
+                  <CedulaInput
                     value={formData.id_number}
-                    onChange={handleInputChange}
-                    type="text"
-                    className="w-full p-3 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary"
-                    placeholder="V-XX.XXX.XXX"
+                    onChange={(val) => setFormData(prev => ({ ...prev, id_number: val }))}
+                    placeholder="12.345.678"
                   />
                 </div>
                 <div>
@@ -336,7 +353,7 @@ export const ClerkStudents = () => {
                 <button
                   type="button"
                   onClick={handleSubmit}
-                  className="px-6 py-3 bg-success text-white rounded-lg font-bold hover:bg-green-700 flex items-center gap-2 shadow-md transition-colors"
+                  className="px-6 py-3 bg-green-600 text-white rounded-lg font-bold hover:bg-green-700 flex items-center gap-2 shadow-md transition-colors"
                 >
                   <Save size={20} /> {isEditing ? 'Actualizar Estudiante' : 'Guardar Estudiante'}
                 </button>
@@ -346,6 +363,18 @@ export const ClerkStudents = () => {
         </div>
       ) : (
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+          <div className="p-4 border-b border-gray-200">
+            <div className="relative max-w-md">
+              <Search className="absolute left-3 top-2.5 text-gray-400" size={20} />
+              <input
+                type="text"
+                placeholder="Buscar por nombre, apellido o cédula..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="w-full pl-10 p-2 border border-gray-300 rounded-lg focus:ring-primary focus:border-primary"
+              />
+            </div>
+          </div>
           <table className="w-full text-left text-sm">
             <thead className="bg-gray-50 border-b border-gray-200">
               <tr>
@@ -356,7 +385,11 @@ export const ClerkStudents = () => {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {students.map(student => (
+              {students.filter(student =>
+                student.first_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                student.last_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                student.id_number.includes(searchTerm)
+              ).map(student => (
                 <tr key={student.id} className="hover:bg-gray-50 transition-colors">
                   <td className="px-6 py-4 font-medium text-gray-900">{student.first_name} {student.last_name}</td>
                   <td className="px-6 py-4 font-mono text-gray-500">{student.id_number}</td>

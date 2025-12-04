@@ -1,5 +1,6 @@
 from django.contrib import admin
 from django.urls import path, include
+from django.http import JsonResponse
 from rest_framework.routers import DefaultRouter
 from .views import (
     AuthViewSet, StudentViewSet, TeacherViewSet, 
@@ -23,6 +24,7 @@ router.register(r'users', UserViewSet, basename='user')
 urlpatterns = [
     path('admin/', admin.site.urls),
     path('api/', include(router.urls)),
+    path('', lambda request: JsonResponse({"message": "Backend is running. Go to http://localhost:3000 for the Frontend."})),
 ]
 
 from django.conf import settings

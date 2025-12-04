@@ -2,20 +2,15 @@ import React, { useState, useEffect } from 'react';
 import client from '../../api/client';
 import { Subject, ScheduleItem } from '../../types';
 import { Plus, Save, Edit, Check, X, Trash2 } from 'lucide-react';
+import { isValidText } from '../../utils/validation';
 
-interface Schedule {
-  id: number;
-  day: string;
-  start_time: string;
-  end_time: string;
-  room: string;
-}
 
 export const ClerkSubjects = () => {
-  const [subjects, setSubjects] = useState<any[]>([]);
+  const [subjects, setSubjects] = useState<Subject[]>([]);
   const [selectedSubjectId, setSelectedSubjectId] = useState<string>('');
   const [isCreating, setIsCreating] = useState(false);
   const [isEditingSchedule, setIsEditingSchedule] = useState(false);
+  const [isEditingSubject, setIsEditingSubject] = useState(false);
   const [loading, setLoading] = useState(true);
 
   // Form State
@@ -23,8 +18,7 @@ export const ClerkSubjects = () => {
   const [newGrade, setNewGrade] = useState('1er Año');
   const [newSection, setNewSection] = useState('A');
 
-  // Schedule State
-  const [schedules, setSchedules] = useState<Schedule[]>([]);
+  const [schedules, setSchedules] = useState<ScheduleItem[]>([]);
   const [newScheduleDay, setNewScheduleDay] = useState('Lunes');
   const [newScheduleStart, setNewScheduleStart] = useState('07:00');
   const [newScheduleEnd, setNewScheduleEnd] = useState('08:30');
@@ -109,6 +103,54 @@ export const ClerkSubjects = () => {
 
   if (loading) return <div className="p-8 text-center">Cargando asignaturas...</div>;
 
+
+
+  // ... (existing useEffects)
+
+  const handleUpdateSubject = async () => {
+    if (!selectedSubjectId || !newName) return;
+    try {
+      await client.patch(`subjects/${selectedSubjectId}/`, {
+        name: newName,
+        grade_level: newGrade,
+        section: newSection
+      });
+      alert("Asignatura actualizada exitosamente");
+      setIsCreating(false);
+      setIsEditingSubject(false);
+      setNewName('');
+      fetchSubjects();
+    } catch (error) {
+      console.error("Error updating subject", error);
+      alert("Error al actualizar asignatura");
+    }
+  };
+
+  const handleDeleteSubject = async () => {
+    if (!selectedSubjectId) return;
+    if (!confirm("¿Eliminar esta asignatura? Se eliminarán también todos los horarios y evaluaciones asociadas.")) return;
+    try {
+      await client.delete(`subjects/${selectedSubjectId}/`);
+      alert("Asignatura eliminada");
+      setSelectedSubjectId('');
+      fetchSubjects();
+    } catch (error) {
+      console.error("Error deleting subject", error);
+      alert("Error al eliminar asignatura");
+    }
+  };
+
+  const startEditSubject = () => {
+    if (!selectedSubject) return;
+    setNewName(selectedSubject.name);
+    setNewGrade(selectedSubject.grade_level);
+    setNewSection(selectedSubject.section);
+    setIsEditingSubject(true);
+    setIsCreating(true);
+  };
+
+  // ... (render)
+
   return (
     <div className="space-y-8">
       <div className="flex flex-wrap items-start justify-between gap-4">
@@ -119,6 +161,7 @@ export const ClerkSubjects = () => {
         <button
           onClick={() => {
             setIsCreating(true);
+            setIsEditingSubject(false);
             setIsEditingSchedule(false);
             setNewName('');
           }}
@@ -134,13 +177,13 @@ export const ClerkSubjects = () => {
           <div className={`bg-white p-6 rounded-xl shadow-sm border ${isCreating ? 'border-primary ring-1 ring-primary' : 'border-gray-200'} transition-all`}>
             <div className="flex justify-between items-center mb-4">
               <h3 className="text-lg font-bold text-gray-900">
-                {isCreating ? 'Nueva Asignatura' : 'Seleccionar Asignatura'}
+                {isCreating ? (isEditingSubject ? 'Editar Asignatura' : 'Nueva Asignatura') : 'Seleccionar Asignatura'}
               </h3>
               {isCreating && (
                 <button
-                  onClick={() => setIsCreating(false)}
+                  onClick={() => { setIsCreating(false); setIsEditingSubject(false); }}
                   className="text-gray-400 hover:text-gray-600"
-                  title="Cancelar creación"
+                  title="Cancelar"
                 >
                   <X size={20} />
                 </button>
@@ -161,10 +204,26 @@ export const ClerkSubjects = () => {
                     ))}
                   </select>
                   {selectedSubject && (
-                    <div className="mt-4 p-4 bg-gray-50 rounded-lg border border-gray-100">
-                      <p className="text-sm text-gray-600"><span className="font-bold">Grado:</span> {selectedSubject.grade_level}</p>
-                      <p className="text-sm text-gray-600"><span className="font-bold">Sección:</span> {selectedSubject.section}</p>
-                      <p className="text-sm text-gray-600"><span className="font-bold">Docente:</span> {selectedSubject.teacher ? `ID: ${selectedSubject.teacher}` : 'Sin asignar'}</p>
+                    <div className="mt-4 p-4 bg-gray-50 rounded-lg border border-gray-100 space-y-3">
+                      <div>
+                        <p className="text-sm text-gray-600"><span className="font-bold">Grado:</span> {selectedSubject.grade_level}</p>
+                        <p className="text-sm text-gray-600"><span className="font-bold">Sección:</span> {selectedSubject.section}</p>
+                        <p className="text-sm text-gray-600"><span className="font-bold">Docente:</span> {selectedSubject.teacher ? `ID: ${selectedSubject.teacher}` : 'Sin asignar'}</p>
+                      </div>
+                      <div className="flex gap-2 pt-2 border-t border-gray-200">
+                        <button
+                          onClick={startEditSubject}
+                          className="flex-1 py-2 bg-blue-100 text-blue-700 rounded-lg font-bold hover:bg-blue-200 flex justify-center items-center gap-2 transition-colors"
+                        >
+                          <Edit size={16} /> Editar
+                        </button>
+                        <button
+                          onClick={handleDeleteSubject}
+                          className="flex-1 py-2 bg-red-100 text-red-700 rounded-lg font-bold hover:bg-red-200 flex justify-center items-center gap-2 transition-colors"
+                        >
+                          <Trash2 size={16} /> Eliminar
+                        </button>
+                      </div>
                     </div>
                   )}
                 </div>
@@ -175,7 +234,11 @@ export const ClerkSubjects = () => {
                     <input
                       type="text"
                       value={newName}
-                      onChange={(e) => setNewName(e.target.value)}
+                      onChange={(e) => {
+                        if (isValidText(e.target.value)) {
+                          setNewName(e.target.value);
+                        }
+                      }}
                       className="w-full p-3 border border-gray-300 rounded-lg bg-white focus:ring-primary focus:border-primary"
                       placeholder="Ej: Matemáticas"
                       autoFocus
@@ -188,11 +251,17 @@ export const ClerkSubjects = () => {
                       onChange={(e) => setNewGrade(e.target.value)}
                       className="w-full p-3 border border-gray-300 rounded-lg bg-white"
                     >
-                      <option>1er Año</option>
-                      <option>2do Año</option>
-                      <option>3er Año</option>
-                      <option>4to Año</option>
-                      <option>5to Año</option>
+                      <option value="1er Grado">1er Grado</option>
+                      <option value="2do Grado">2do Grado</option>
+                      <option value="3er Grado">3er Grado</option>
+                      <option value="4to Grado">4to Grado</option>
+                      <option value="5to Grado">5to Grado</option>
+                      <option value="6to Grado">6to Grado</option>
+                      <option value="1er Año">1er Año</option>
+                      <option value="2do Año">2do Año</option>
+                      <option value="3er Año">3er Año</option>
+                      <option value="4to Año">4to Año</option>
+                      <option value="5to Año">5to Año</option>
                     </select>
                   </div>
                   <div>
@@ -204,8 +273,8 @@ export const ClerkSubjects = () => {
                           type="button"
                           onClick={() => setNewSection(sec)}
                           className={`flex-1 py-2 rounded-lg font-bold border transition-colors ${newSection === sec
-                              ? 'bg-primary text-white border-primary'
-                              : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
+                            ? 'bg-primary text-white border-primary'
+                            : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'
                             }`}
                         >
                           {sec}
@@ -215,16 +284,16 @@ export const ClerkSubjects = () => {
                   </div>
                   <div className="pt-4 flex justify-end gap-3">
                     <button
-                      onClick={() => setIsCreating(false)}
+                      onClick={() => { setIsCreating(false); setIsEditingSubject(false); }}
                       className="px-4 py-2 border border-gray-300 rounded-lg text-sm font-semibold text-gray-700 hover:bg-gray-50"
                     >
                       Cancelar
                     </button>
                     <button
-                      onClick={handleCreateSubject}
+                      onClick={isEditingSubject ? handleUpdateSubject : handleCreateSubject}
                       className="flex items-center gap-2 px-4 py-2 bg-primary text-white rounded-lg text-sm font-semibold hover:bg-blue-800 shadow-sm"
                     >
-                      <Save size={16} /> Crear
+                      <Save size={16} /> {isEditingSubject ? 'Actualizar' : 'Crear'}
                     </button>
                   </div>
                 </>
@@ -247,7 +316,12 @@ export const ClerkSubjects = () => {
               {selectedSubject && !isEditingSchedule && (
                 <button
                   onClick={() => setIsEditingSchedule(true)}
-                  className="flex items-center gap-2 px-4 py-2 border border-gray-300 rounded-lg text-sm font-semibold text-gray-700 hover:bg-gray-50 transition-colors"
+                  disabled={isCreating && !isEditingSubject}
+                  className={`flex items-center gap-2 px-4 py-2 border rounded-lg text-sm font-semibold transition-colors ${isCreating && !isEditingSubject
+                      ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed'
+                      : 'border-gray-300 text-gray-700 hover:bg-gray-50'
+                    }`}
+                  title={isCreating && !isEditingSubject ? "Termine de crear la asignatura para modificar su horario" : ""}
                 >
                   <Edit size={16} /> Modificar Horario
                 </button>

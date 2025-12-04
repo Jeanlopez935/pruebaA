@@ -58,8 +58,111 @@ class StudentViewSet(viewsets.ModelViewSet):
         if user.role == 'REPRESENTANTE':
             return Student.objects.filter(representative=user)
         elif user.role == 'DOCENTE':
-             return Student.objects.all() 
+             return Student.objects.filter(subject__teacher__user=user).distinct() 
         return Student.objects.all()
+
+    @action(detail=True, methods=['get'])
+    def report_card(self, request, pk=None):
+        import io
+        from datetime import datetime
+        from reportlab.pdfgen import canvas
+        from reportlab.lib.pagesizes import letter
+        from django.http import FileResponse
+        from django.db.models import Sum, F
+        
+        student = self.get_object()
+        
+        # Fetch all grades for this student
+        grades = Grade.objects.filter(student=student).select_related('evaluation', 'evaluation__subject')
+        
+        # Organize data: Subject -> Lapso -> Final Score
+        # Final Score = Sum(Grade * Percentage / 100) or just Sum(Grade) if weighted?
+        # Assuming Grade is 0-20 and Percentage is weight. 
+        # Actually, usually Grade is 0-20. If Eval is 20%, and Grade is 20, contribution is 4 pts.
+        # Let's calculate: score * (percentage / 100)
+        
+        report_data = {}
+        subjects = set()
+        
+        for grade in grades:
+            subj_name = grade.evaluation.subject.name
+            lapso = grade.evaluation.lapso
+            percentage = grade.evaluation.percentage
+            score = grade.score
+            
+            if subj_name not in report_data:
+                report_data[subj_name] = {1: 0, 2: 0, 3: 0}
+            
+            subjects.add(subj_name)
+            
+            # Calculate weighted contribution
+            contribution = (score * percentage) / 100
+            report_data[subj_name][lapso] += contribution
+
+        buffer = io.BytesIO()
+        p = canvas.Canvas(buffer, pagesize=letter)
+        width, height = letter
+        
+        # Header
+        p.setFont("Helvetica-Bold", 16)
+        p.drawString(50, height - 50, "Boletín Informativo")
+        
+        p.setFont("Helvetica", 12)
+        p.drawString(50, height - 80, f"Estudiante: {student.first_name} {student.last_name}")
+        p.drawString(50, height - 100, f"Cédula: {student.id_number}")
+        p.drawString(50, height - 120, f"Grado: {student.current_grade} - Sección: {student.section}")
+        
+        # Emission Date
+        now = datetime.now().strftime("%d/%m/%Y %I:%M %p")
+        p.setFont("Helvetica-Oblique", 10)
+        p.drawString(50, height - 140, f"Fecha de emisión: {now}")
+        
+        # Table Header
+        y = height - 180
+        p.setFont("Helvetica-Bold", 10)
+        p.drawString(50, y, "Asignatura")
+        p.drawString(250, y, "1er Lapso")
+        p.drawString(330, y, "2do Lapso")
+        p.drawString(410, y, "3er Lapso")
+        p.drawString(490, y, "Definitiva")
+        
+        p.line(50, y - 5, 550, y - 5)
+        y -= 25
+        
+        # Table Content
+        p.setFont("Helvetica", 10)
+        for subject in sorted(list(subjects)):
+            p.drawString(50, y, subject[:35])
+            
+            # 1er Lapso
+            l1 = report_data[subject].get(1, 0)
+            p.drawString(250, y, f"{l1:.2f}")
+            
+            # 2do Lapso
+            l2 = report_data[subject].get(2, 0)
+            p.drawString(330, y, f"{l2:.2f}")
+            
+            # 3er Lapso
+            l3 = report_data[subject].get(3, 0)
+            p.drawString(410, y, f"{l3:.2f}")
+            
+            # Definitiva (Average)
+            definitiva = (l1 + l2 + l3) / 3
+            p.setFont("Helvetica-Bold", 10)
+            p.drawString(490, y, f"{definitiva:.2f}")
+            p.setFont("Helvetica", 10)
+            
+            y -= 20
+            
+            if y < 50:
+                p.showPage()
+                y = height - 50
+                
+        p.showPage()
+        p.save()
+        
+        buffer.seek(0)
+        return FileResponse(buffer, as_attachment=True, filename=f'boletin_{student.id_number}.pdf')
 
 class TeacherViewSet(viewsets.ModelViewSet):
     queryset = Teacher.objects.all()

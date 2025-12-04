@@ -2,8 +2,10 @@ import React, { useState, useEffect } from 'react';
 import client from '../../api/client';
 import { Student, Grade, Payment } from '../../types';
 import { Users, AlertCircle, TrendingUp } from 'lucide-react';
+import { useAuth } from '../../context/AuthContext';
 
 export const RepresentativeDashboard = () => {
+  const { user } = useAuth();
   const [students, setStudents] = useState<Student[]>([]);
   const [selectedStudentId, setSelectedStudentId] = useState<string>('');
   const [pendingPayments, setPendingPayments] = useState<Payment[]>([]);
@@ -94,8 +96,8 @@ export const RepresentativeDashboard = () => {
       {/* Header & Selector */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-bold text-gray-900">Hola, {selectedStudent.name}</h1>
-          <p className="text-gray-500">Resumen académico del Año Escolar Actual</p>
+          <h1 className="text-3xl font-bold text-gray-900">Hola, {user?.name}</h1>
+          <p className="text-gray-500">Usted está viendo la información del estudiante: <span className="font-bold text-primary">{selectedStudent.name}</span></p>
         </div>
         <div className="flex items-center gap-3 bg-white p-2 rounded-lg shadow-sm border border-gray-200">
           <span className="text-sm font-medium text-gray-600 pl-2">Seleccionar Estudiante:</span>

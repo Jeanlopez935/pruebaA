@@ -10,6 +10,7 @@ export const TeacherGradesSummary = () => {
   const [students, setStudents] = useState<Student[]>([]);
   const [grades, setGrades] = useState<Grade[]>([]);
   const [loading, setLoading] = useState(true);
+  const [selectedLapso, setSelectedLapso] = useState(1);
 
   useEffect(() => {
     const fetchSubjects = async () => {
@@ -48,7 +49,8 @@ export const TeacherGradesSummary = () => {
           subjectId: g.subject_id?.toString() || '',
           evaluationName: g.evaluation_name || 'Evaluación',
           score: parseFloat(g.score),
-          date: g.evaluation_date || new Date().toISOString()
+          date: g.evaluation_date || new Date().toISOString(),
+          evaluationLapso: g.evaluation_lapso // Ensure backend sends this
         }));
         setGrades(fetchedGrades);
 
@@ -81,9 +83,14 @@ export const TeacherGradesSummary = () => {
 
   const selectedSubject = subjects.find(s => s.id === selectedSubjectId);
 
-  // Calculate averages
+  // Calculate averages based on selected Lapso
   const studentAverages = students.map(student => {
-    const studentGrades = grades.filter(g => g.studentId === student.id);
+    // Filter grades by student AND selected lapso
+    const studentGrades = grades.filter(g =>
+      g.studentId === student.id &&
+      (g.evaluationLapso === selectedLapso || (!g.evaluationLapso && selectedLapso === 1)) // Fallback for old data
+    );
+
     if (studentGrades.length === 0) return { ...student, average: '-' };
 
     const sum = studentGrades.reduce((acc, curr) => acc + curr.score, 0);
@@ -103,19 +110,34 @@ export const TeacherGradesSummary = () => {
       </div>
 
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-        <div className="p-6 border-b border-gray-200 bg-gray-50 flex justify-between items-center">
-          <div className="flex flex-col gap-1">
-            <select
-              value={selectedSubjectId}
-              onChange={(e) => setSelectedSubjectId(e.target.value)}
-              className="text-xl font-bold text-gray-800 bg-transparent border-none focus:ring-0 p-0 cursor-pointer hover:text-primary transition-colors"
-            >
-              {subjects.map(subject => (
-                <option key={subject.id} value={subject.id}>
-                  {subject.name}
-                </option>
-              ))}
-            </select>
+        <div className="p-6 border-b border-gray-200 bg-gray-50 flex flex-wrap justify-between items-center gap-4">
+          <div className="flex flex-col gap-2">
+            <div className="flex items-center gap-4">
+              <select
+                value={selectedSubjectId}
+                onChange={(e) => setSelectedSubjectId(e.target.value)}
+                className="text-xl font-bold text-gray-800 bg-transparent border-none focus:ring-0 p-0 cursor-pointer hover:text-primary transition-colors"
+              >
+                {subjects.map(subject => (
+                  <option key={subject.id} value={subject.id}>
+                    {subject.name} ({subject.grade} "{subject.section}")
+                  </option>
+                ))}
+              </select>
+
+              <div className="h-6 w-px bg-gray-300 mx-2"></div>
+
+              <select
+                value={selectedLapso}
+                onChange={(e) => setSelectedLapso(parseInt(e.target.value))}
+                className="text-sm font-medium text-gray-600 bg-white border border-gray-300 rounded-lg px-3 py-1 focus:ring-primary focus:border-primary"
+              >
+                <option value={1}>Lapso 1</option>
+                <option value={2}>Lapso 2</option>
+                <option value={3}>Lapso 3</option>
+              </select>
+            </div>
+
             {selectedSubject && (
               <p className="text-gray-500">
                 {selectedSubject.grade} - Sección {selectedSubject.section} • Año Escolar: 2025-2026
@@ -137,7 +159,7 @@ export const TeacherGradesSummary = () => {
               <tr>
                 <th className="px-6 py-3 font-bold">Cédula</th>
                 <th className="px-6 py-3 font-bold">Nombre del Alumno</th>
-                <th className="px-6 py-3 font-bold text-center">Promedio (20pts)</th>
+                <th className="px-6 py-3 font-bold text-center">Promedio Lapso {selectedLapso} (20pts)</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
